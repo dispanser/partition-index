@@ -13,22 +13,25 @@ fn contains(f: &dyn Filter) -> bool {
     f.contains(0)
 }
 
-fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("insert_n 10_000, 10, 1 << 16", |b| {
-        b.iter(|| insert_n(black_box(10_000), black_box(10), black_box(1 << 16)))
-    });
-    c.bench_function("insert_n 2_000_000, 10, 1 << 24", |b| {
-        b.iter(|| insert_n(black_box(2_000_000), black_box(10), black_box(1 << 24)))
-    });
-    let small_filter = insert_n(10_000, 10, 1 << 16);
-    c.bench_function("contains 0 on 10k (small filter)", |b| {
-        b.iter(|| contains(black_box(&small_filter)))
-    });
-    let big_filter = insert_n(2_000_000, 10, 1 << 24);
-    c.bench_function("contains 0 on 2m (big filter)", |b| {
-        b.iter(|| contains(black_box(&big_filter)))
-    });
+fn insert_bench(c: &mut Criterion) {
+    let mut group = c.benchmark_group("insert_varying size");
+    for n in [10_000, 100_000, 1_000_000] {
+        group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
+            b.iter(|| insert_n(n, 10, 14 * n))
+        });
+    }
 }
 
-criterion_group!(benches, criterion_benchmark);
+fn contains_bench_small(c: &mut Criterion) {
+    let mut group = c.benchmark_group("contains_small_set");
+    for d in 2..=10 {
+        // precompute filter outside of the contains benchmark
+        let filter = insert_n(10_000, 10, 1 << 16);
+        group.bench_with_input(BenchmarkId::from_parameter(d), &d, |b, &d| {
+            b.iter(|| contains(black_box(&filter)))
+        });
+    }
+}
+
+criterion_group!(benches, contains_bench_small, insert_bench);
 criterion_main!(benches);
