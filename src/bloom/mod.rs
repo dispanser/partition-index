@@ -14,15 +14,15 @@ pub trait Filter {
 pub struct PaperBloom {
     bits: Vec<u8>,
     m: u64,
-    k: u64,
+    d: u64,
 }
 
 impl PaperBloom {
-    pub fn new(k: u64, m: u64) -> Self {
+    pub fn new(d: u64, m: u64) -> Self {
         let size = if m / 8 * 8 == m { m / 8 } else { m / 8 + 1 };
         PaperBloom {
             bits: vec![0; size as usize],
-            k,
+            d,
             m,
         }
     }
@@ -32,7 +32,7 @@ impl Filter for PaperBloom {
     fn insert(self: &mut Self, key: u64) {
         let mut hasher = DefaultHasher::new();
         let mut key_rot = key;
-        for _iteration in 0..self.k {
+        for _iteration in 0..self.d {
             hasher.write_u64(key_rot);
             key_rot = hasher.finish();
             let bit_to_set = key_rot % self.m;
@@ -43,7 +43,7 @@ impl Filter for PaperBloom {
     fn contains(self: &Self, key: u64) -> bool {
         let mut hasher = DefaultHasher::new();
         let mut key_rot = key;
-        for _iteration in 0..self.k {
+        for _iteration in 0..self.d {
             hasher.write_u64(key_rot);
             key_rot = hasher.finish();
             let bit_to_set = key_rot % self.m;
