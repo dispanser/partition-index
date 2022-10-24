@@ -64,10 +64,10 @@ mod tests {
     use super::{Filter, PaperBloom};
     #[test]
     fn no_false_negatives() {
-        const SAMPLE_SIZE: u64 = 1_000;
-        // const SAMPLE_SIZE: usize = 10_000_000;
-        const SAMPLES: u64 = 1_000_000;
-        let mut pb = PaperBloom::new(3, 5000);
+        const SAMPLE_SIZE: u64 = 10_000;
+        const SAMPLES: u64 = 100_000;
+        // 10 bits, 7 functions --> < 1% fp
+        let mut pb = PaperBloom::new(7, 100000);
         (0..SAMPLE_SIZE).for_each(|key| pb.insert(key));
         for i in 0..SAMPLE_SIZE {
             assert!(pb.contains(i));
@@ -78,11 +78,10 @@ mod tests {
                 pos += 1;
             }
         }
-        eprintln!(
-            "tp;false positive rate: {:.2}%",
-            pos as f64 / SAMPLES as f64 * 100.0
-        );
-        assert!(false);
+        let fp_rate = pos as f64 / SAMPLES as f64;
+        eprintln!("tp;false positive rate: {:.2}%", fp_rate * 100.0,);
+        assert!(fp_rate < 0.01);
+        // assert!(false);
     }
     // use rand::prelude::thread_rng;
     // let mut rng = thread_rng();
