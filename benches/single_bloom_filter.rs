@@ -31,12 +31,23 @@ fn insert_bench_vary_d(c: &mut Criterion) {
     }
 }
 
-fn contains_bench_small(c: &mut Criterion) {
-    let mut group = c.benchmark_group("contains_small_set");
+fn contains_bench_vary_d(c: &mut Criterion) {
+    let mut group = c.benchmark_group("contains_varying_d");
     for d in [2, 4, 8, 16] {
         // precompute filter outside of the contains benchmark
-        let filter = insert_n(10_000, 10, 1 << 16);
+        let filter = insert_n(10_000, d, 1 << 16);
         group.bench_with_input(BenchmarkId::from_parameter(d), &d, |b, &_| {
+            b.iter(|| contains(black_box(&filter)))
+        });
+    }
+}
+
+fn contains_bench_vary_n(c: &mut Criterion) {
+    let mut group = c.benchmark_group("contains_varying_n");
+    for n in [10_000, 100_000, 1_000_000] {
+        // precompute filter outside of the contains benchmark
+        let filter = insert_n(n, 10, 1 << 16);
+        group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &_| {
             b.iter(|| contains(black_box(&filter)))
         });
     }
@@ -44,8 +55,9 @@ fn contains_bench_small(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    contains_bench_small,
     insert_bench_vary_d,
-    insert_bench_vary_n
+    insert_bench_vary_n,
+    contains_bench_vary_d,
+    contains_bench_vary_n
 );
 criterion_main!(benches);
