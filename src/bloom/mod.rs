@@ -32,23 +32,37 @@ impl Filter for PaperBloom {
     fn insert(self: &mut Self, key: u64) {
         let mut hasher = DefaultHasher::new();
         let mut key_rot = key;
-        for _iteration in 0..self.d {
+        let mut iteration = self.d;
+        let bits_per_slot = (u64::BITS - self.m.leading_zeros() + 2) as u64;
+        let slots_per_hash = 64 / bits_per_slot as u64;
+        for _hash in 0..(self.d + slots_per_hash - 1) / slots_per_hash {
             hasher.write_u64(key_rot);
             key_rot = hasher.finish();
-            let bit_to_set = key_rot % self.m;
-            self.bits[(bit_to_set >> 3) as usize] |= 1 << (bit_to_set & 7) as u8;
+            for from in 0..std::cmp::min(slots_per_hash, iteration) {
+                let bits = (key_rot >> (from * bits_per_slot)) & ((1 << bits_per_slot) - 1);
+                let bit_to_set = bits % self.m;
+                self.bits[(bit_to_set >> 3) as usize] |= 1 << (bit_to_set & 7) as u8;
+                iteration -= 1;
+            }
         }
     }
 
     fn contains(self: &Self, key: u64) -> bool {
         let mut hasher = DefaultHasher::new();
         let mut key_rot = key;
-        for _iteration in 0..self.d {
+        let mut iteration = self.d;
+        let bits_per_slot = (u64::BITS - self.m.leading_zeros() + 2) as u64;
+        let slots_per_hash = 64 / bits_per_slot as u64;
+        for _hash in 0..(self.d + slots_per_hash - 1) / slots_per_hash {
             hasher.write_u64(key_rot);
             key_rot = hasher.finish();
-            let bit_to_set = key_rot % self.m;
-            if (self.bits[(bit_to_set >> 3) as usize] >> (bit_to_set & 7) as u8) & 1 == 0 {
-                return false;
+            for from in 0..std::cmp::min(slots_per_hash, iteration) {
+                let bits = (key_rot >> (from * bits_per_slot)) & ((1 << bits_per_slot) - 1);
+                let bit_to_read = bits % self.m;
+                if (self.bits[(bit_to_read >> 3) as usize] >> (bit_to_read & 7) as u8) & 1 == 0 {
+                    return false;
+                }
+                iteration -= 1;
             }
         }
         true
@@ -81,7 +95,6 @@ mod tests {
         let fp_rate = pos as f64 / SAMPLES as f64;
         eprintln!("tp;false positive rate: {:.2}%", fp_rate * 100.0,);
         assert!(fp_rate < 0.01);
-        // assert!(false);
     }
     // use rand::prelude::thread_rng;
     // let mut rng = thread_rng();
