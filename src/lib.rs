@@ -3,7 +3,6 @@ pub mod bloom;
 use arrow2::array;
 use arrow2::error::Error;
 use arrow2::io::parquet::read;
-use blake3;
 
 use std::collections::HashSet;
 use std::fs::File;
@@ -65,8 +64,6 @@ pub fn hash_column(chunks: read::FileReader<File>) -> Result<(), Error> {
         rows += array.len();
         for maybe_value in array.iter() {
             if let Some(value) = maybe_value {
-                let bytes: &[u8] = &value.to_ne_bytes();
-                let hash = blake3::hash(bytes);
                 // let bb: u64 = hash.into();
                 elems += 1;
                 distinct.insert(*value);
@@ -81,17 +78,4 @@ pub fn hash_column(chunks: read::FileReader<File>) -> Result<(), Error> {
         distinct.len()
     );
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use core::convert::TryFrom;
-    use xorf::{BinaryFuse32, Filter};
-
-    // #[test]
-    fn xor_filter_docs() {
-        const SAMPLE_SIZE: u64 = 100_000_000;
-        let keys: Vec<u64> = (0..SAMPLE_SIZE).collect();
-        let filter = BinaryFuse32::try_from(&keys).unwrap();
-    }
 }
