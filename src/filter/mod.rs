@@ -1,3 +1,5 @@
+pub mod bloom;
+
 /// Basic Filter trait, not constrained to bloom filters
 pub trait Filter {
     fn insert(self: &mut Self, key: u64);

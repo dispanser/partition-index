@@ -1,7 +1,8 @@
 extern crate bloom_lake;
 
-use bloom_lake::bloom::basic_bloom::PaperBloom;
+use bloom_lake::filter::bloom::basic_bloom::PaperBloom;
 use bloom_lake::filter::Filter;
+
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 
 fn insert_n(n: u64, d: u64, m: u64) -> PaperBloom {

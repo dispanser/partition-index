@@ -1,4 +1,3 @@
-pub mod bloom;
 pub mod filter;
 
 use arrow2::array;
