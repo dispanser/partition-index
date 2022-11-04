@@ -62,27 +62,34 @@ impl Filter for PaperBloom {
 
 #[cfg(test)]
 mod tests {
-    use super::{Filter, PaperBloom};
+    use super::PaperBloom;
+    use crate::filter::correctness_tests::*;
+
+    const INPUTS: u64 = 10_000;
+
     #[test]
     fn no_false_negatives() {
-        const SAMPLE_SIZE: u64 = 10_000;
-        const SAMPLES: u64 = 100_000;
         // 10 bits, 7 functions --> < 1% fp
         let mut pb = PaperBloom::new(7, 100000);
-        (0..SAMPLE_SIZE).for_each(|key| pb.insert(key));
-        for i in 0..SAMPLE_SIZE {
-            assert!(pb.contains(i));
-        }
-        let mut pos = 0;
-        for i in SAMPLE_SIZE..(SAMPLE_SIZE + SAMPLES) {
-            if pb.contains(i) {
-                pos += 1;
-            }
-        }
-        let fp_rate = pos as f64 / SAMPLES as f64;
-        eprintln!("tp;false positive rate: {:.2}%", fp_rate * 100.0,);
-        assert!(fp_rate < 0.01);
+
+        fill_from_range(&mut pb, 0..INPUTS);
+        check_false_negatives(&mut pb, 0..INPUTS);
     }
-    // use rand::prelude::thread_rng;
-    // let mut rng = thread_rng();
+
+    #[test]
+    fn verify_false_positive_rate() {
+        const SAMPLE: u64 = 100_000;
+
+        // 10 bits, 7 functions --> < 1% fp
+        let mut pb = PaperBloom::new(7, 100000);
+        fill_from_range(&mut pb, 0..INPUTS);
+
+        let fp_rate = estimate_false_positive_rate(&mut pb, INPUTS..INPUTS + SAMPLE);
+        assert!(
+            fp_rate < 0.01,
+            "false positive rate: {:.3}% >= {:.3}",
+            fp_rate * 100.0,
+            0.01
+        );
+    }
 }
