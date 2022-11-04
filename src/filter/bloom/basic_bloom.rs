@@ -58,10 +58,6 @@ impl Filter for PaperBloom {
         }
         true
     }
-
-    fn fp_rate(self: &Self) -> f64 {
-        0.1
-    }
 }
 
 #[cfg(test)]
