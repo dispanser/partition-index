@@ -1,4 +1,4 @@
-use super::Filter;
+use crate::filter::Filter;
 use std::{collections::hash_map::DefaultHasher, hash::Hasher};
 
 /// Basic implementation of a bloom filter following the paper as closely as I can.

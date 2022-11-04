@@ -1,4 +1,5 @@
 pub mod bloom;
+pub mod filter;
 
 use arrow2::array;
 use arrow2::error::Error;
