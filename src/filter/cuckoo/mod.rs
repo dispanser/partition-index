@@ -90,7 +90,6 @@ fn fingerprint(key: u64) -> u16 {
         if key_rot & 0xFFFF != 0 {
             break;
         }
-        eprintln!("tp;repeatedly calling hash b/c we saw 0 at {}", key_rot);
     }
     (key_rot & 0xFFFF) as u16
 }

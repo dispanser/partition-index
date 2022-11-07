@@ -24,6 +24,7 @@
           nativeBuildInputs = with pkgs; [ 
             flatbuffers
             protobuf
+            gnuplot
           ];
           buildInputs = with pkgs; [
             protobuf
