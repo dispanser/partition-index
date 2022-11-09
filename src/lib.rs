@@ -1,4 +1,5 @@
 pub mod filter;
+pub mod index;
 
 use arrow2::array;
 use arrow2::error::Error;
