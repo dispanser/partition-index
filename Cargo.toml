@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 arrow2 = { version = "0.14.2", features = ["io_parquet", "io_parquet_compression"] }
 rand = "0.8.5"
+rand_xoshiro = "0.6.0"
 
 [lib]
 bench = false

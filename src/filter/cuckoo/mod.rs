@@ -1,5 +1,7 @@
+pub mod growable;
+
 use crate::filter::Filter;
-use rand::{thread_rng, Rng};
+use rand::Rng;
 use std::{collections::hash_map::DefaultHasher, hash::Hasher};
 
 pub struct CuckooFilter {
@@ -70,7 +72,7 @@ impl Filter for CuckooFilter {
 }
 
 #[inline]
-fn hash(key: u64) -> u64 {
+pub fn hash(key: u64) -> u64 {
     let mut hasher = DefaultHasher::new();
     hasher.write_u64(key);
     hasher.finish()

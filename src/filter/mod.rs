@@ -15,13 +15,13 @@ pub mod correctness_tests {
     use super::Filter;
 
     pub fn fill_from_range(filter: &mut dyn Filter, inputs: Range<u64>) {
-        inputs.clone().for_each(|key| filter.insert(key));
+        inputs.for_each(|key| filter.insert(key));
     }
 
     pub fn check_false_negatives(filter: &mut dyn Filter, expected_inputs: Range<u64>) {
         expected_inputs
             .into_iter()
-            .for_each(|key| assert!(filter.contains(key)));
+            .for_each(|key| assert!(filter.contains(key), "filter does not contain {}", key));
     }
 
     /// estimate the false positive rate based on a range that is not part of the filter

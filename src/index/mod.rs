@@ -31,20 +31,74 @@ pub mod cuckoo;
 
 /// A trait that allows querying a data set for matching partitions.
 /// TODO: P should probably be somehow serializable
-pub trait PartitionFilter<P> {
+pub trait PartitionFilter<P>
+where
+    P: Clone,
+{
     /// Query matching partitions for a given value
     /// TODO: what's the result type here? It's either the partition, or
     /// some kind of partition ID.
-    fn query(value: u64) -> dyn Iterator<Item = P>;
+    fn query(value: u64) -> Vec<P>;
 }
 
-pub trait PartitionIndex<P> {
+pub trait PartitionIndex<P>
+where
+    P: Clone,
+{
     /// Add a partition to the index.
     /// @param values an iterator of the values stored in the partition
     /// @param partition the partition identifier to associate the values with
-    fn add(values: &dyn Iterator<Item = u64>, partition: P);
+    fn add(self: &mut Self, values: &dyn Iterator<Item = u64>, partition: &P);
 
     /// Remove a partition from the index.
     /// @param partition to remove
-    fn remove(partition: P);
+    fn remove(self: &mut Self, partition: P);
+}
+
+#[cfg(test)]
+pub mod tests {
+    use rand::distributions::Uniform;
+    use rand::{Rng, SeedableRng};
+
+    use super::PartitionIndex;
+
+    #[derive(Clone)]
+    pub struct TestPartition {
+        id: usize, // counting upwards from zero, the simplest possible ID
+        size: u32,
+        seed: u64, // we don't store actual sequence of values, but a seed.
+    }
+
+    pub fn fill_index(index: &mut dyn PartitionIndex<TestPartition>, ps: &Vec<TestPartition>) {
+        for partition in ps {
+            index.add(&create_partition_data(&partition), partition);
+        }
+    }
+
+    pub fn create_partition_data(partition: &TestPartition) -> impl Iterator<Item = u64> {
+        let data_rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(partition.seed);
+        data_rng
+            .sample_iter(Uniform::new_inclusive(u64::MIN, u64::MAX))
+            .take(partition.size as usize)
+    }
+
+    pub fn create_test_data(
+        num_partitions: usize,
+        size_range: (u32, u32),
+        seed: u64,
+    ) -> Vec<TestPartition> {
+        let partition_size_distribution = Uniform::new(size_range.0, size_range.1);
+
+        // Uses a random generator starting from a fixed seed, enabling the test to
+        // reproduce the same results for the test / lookup phase without storing them.
+        let mut data_rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(seed);
+        // let partition_sizes = (&mut data_rng).sample_iter(partition_size_distribution);
+        (0..num_partitions)
+            .map(|id| {
+                let size = data_rng.sample(partition_size_distribution);
+                let seed = data_rng.gen();
+                TestPartition { id, size, seed }
+            })
+            .collect::<Vec<_>>()
+    }
 }
