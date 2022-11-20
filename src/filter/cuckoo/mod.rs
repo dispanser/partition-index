@@ -7,31 +7,35 @@ use std::{collections::hash_map::DefaultHasher, hash::Hasher};
 #[derive(Debug)]
 pub struct CuckooFilter {
     data: Vec<u16>, // 16 bit fingerprints, 0 marks invalid entry
-    slots: u64,
-    buckets_per_entry: u64,
-    entries: u64, // number of fingerprints stored in the filter
+    buckets: u64,
+    entries_per_bucket: u64,
+    items: u64, // number of fingerprints stored in the filter
 }
 
+// lingo:
+// - bucket: as in the cuckoo paper, a list of entries. A value can be in one of two buckets.
+// - entry: entries form a bucket. The number of entries per bucket is fixed via constructor arg.
+// - slot: a single place in the array of fingerprints, containing one or zero fingerprints.
 impl CuckooFilter {
-    pub fn new(slots: u64, buckets_per_entry: u64) -> Self {
+    pub fn new(buckets: u64, buckets_per_entry: u64) -> Self {
         CuckooFilter {
-            data: vec![0; (slots * buckets_per_entry).try_into().unwrap()],
-            slots,
-            buckets_per_entry,
-            entries: 0,
+            data: vec![0; (buckets * buckets_per_entry).try_into().unwrap()],
+            buckets,
+            entries_per_bucket: buckets_per_entry,
+            items: 0,
         }
     }
 
-    fn try_insert(self: &mut Self, fingerprint: u16, slot: u64, tries_left: u8) -> bool {
-        assert!(slot < self.slots, "{} < {}", slot, self.slots);
-        let start_slot = (slot * self.buckets_per_entry) as usize;
-        for b in start_slot..(start_slot + self.buckets_per_entry as usize) {
+    fn try_insert(self: &mut Self, fingerprint: u16, bucket: u64, tries_left: u8) -> bool {
+        assert!(bucket < self.buckets, "{} < {}", bucket, self.buckets);
+        let start_slot = (bucket * self.entries_per_bucket) as usize;
+        for b in start_slot..(start_slot + self.entries_per_bucket as usize) {
             if self.data[b] == fingerprint {
                 return true; // data already inserted, doing nothing
             }
             if self.data[b] == 0 {
                 self.data[b] = fingerprint;
-                self.entries += 1;
+                self.items += 1;
                 return true;
             }
         }
@@ -39,22 +43,22 @@ impl CuckooFilter {
             return false;
         }
         // Evicting the first entry. Determined by a fair dice roll.
-        let bucket = start_slot + rand::thread_rng().gen_range(0..self.buckets_per_entry) as usize;
-        let evicted = self.data[bucket];
+        let slot = start_slot + rand::thread_rng().gen_range(0..self.entries_per_bucket) as usize;
+        let evicted = self.data[slot];
         // replace already, otherwise we immediately find our fingerprint-to-evict
-        self.data[bucket] = fingerprint;
-        if self.try_insert(evicted, self.flip_slot(evicted, slot), tries_left - 1) {
+        self.data[slot] = fingerprint;
+        if self.try_insert(evicted, self.flip_bucket(evicted, bucket), tries_left - 1) {
             true
         } else {
-            self.data[bucket] = evicted; // restore previous entry
+            self.data[slot] = evicted; // restore previous entry
             false
         }
     }
 
-    fn find_in_slot(self: &Self, fingerprint: u16, slot: u64) -> bool {
-        assert!(slot < self.slots);
-        let start_slot = (slot * self.buckets_per_entry) as usize;
-        for b in start_slot..(start_slot + self.buckets_per_entry as usize) {
+    fn find_in_bucket(self: &Self, fingerprint: u16, bucket: u64) -> bool {
+        assert!(bucket < self.buckets);
+        let start_slot = (bucket * self.entries_per_bucket) as usize;
+        for b in start_slot..(start_slot + self.entries_per_bucket as usize) {
             if self.data[b] == fingerprint {
                 return true;
             }
@@ -62,31 +66,36 @@ impl CuckooFilter {
         false
     }
 
-    fn slot(self: &Self, key: u64, fingerprint: u16) -> u64 {
-        let fp_hash = hash(fingerprint.into()) % self.slots;
-        ((hash(key) % self.slots) ^ fp_hash) % self.slots
+    fn bucket(self: &Self, key: u64, fingerprint: u16) -> u64 {
+        let fp_hash = hash(fingerprint.into()) % self.buckets;
+        ((hash(key) % self.buckets) ^ fp_hash) % self.buckets
     }
 
-    fn flip_slot(self: &Self, fingerprint: u16, slot: u64) -> u64 {
-        assert!(slot < self.slots, "slot {} >= max of {}", slot, self.slots);
-        let fp_hash = hash(fingerprint.into()) % self.slots;
-        (slot ^ fp_hash) % self.slots
+    fn flip_bucket(self: &Self, fingerprint: u16, bucket: u64) -> u64 {
+        assert!(
+            bucket < self.buckets,
+            "bucket {} >= max of {}",
+            bucket,
+            self.buckets
+        );
+        let fp_hash = hash(fingerprint.into()) % self.buckets;
+        (bucket ^ fp_hash) % self.buckets
     }
 }
 
 impl Filter for CuckooFilter {
     fn insert(self: &mut Self, key: u64) {
         let fingerprint = fingerprint(key);
-        if !self.try_insert(fingerprint, self.slot(key, fingerprint), u8::MAX) {
+        if !self.try_insert(fingerprint, self.bucket(key, fingerprint), u8::MAX) {
             panic!("insert failed: occupancy limits reached.");
         }
     }
 
     fn contains(self: &Self, key: u64) -> bool {
         let fingerprint = fingerprint(key);
-        let slot = self.slot(key, fingerprint);
-        let alt = self.flip_slot(fingerprint, slot);
-        self.find_in_slot(fingerprint, slot) || self.find_in_slot(fingerprint, alt)
+        let bucket = self.bucket(key, fingerprint);
+        let alt = self.flip_bucket(fingerprint, bucket);
+        self.find_in_bucket(fingerprint, bucket) || self.find_in_bucket(fingerprint, alt)
     }
 }
 
@@ -151,24 +160,24 @@ mod tests {
 
 #[cfg(test)]
 mod occupancy_tests {
-    use crate::filter::cuckoo::{fingerprint, hash};
+    use crate::filter::cuckoo::fingerprint;
 
     use super::CuckooFilter;
 
     /// insert values into a cuckoo filter until it fails
-    fn data_density(slots: u64, entries_per_slot: u64) -> (u64, f64) {
-        let mut pb = CuckooFilter::new(slots, entries_per_slot);
+    fn data_density(buckets: u64, entries_per_bucket: u64) -> (u64, f64) {
+        let mut pb = CuckooFilter::new(buckets, entries_per_bucket);
         let mut inserted = 0;
-        for i in 0..(slots * entries_per_slot + 1) {
+        for i in 0..(buckets * entries_per_bucket + 1) {
             let fingerprint = fingerprint(i);
-            if !pb.try_insert(fingerprint, pb.slot(i, fingerprint), u8::MAX) {
+            if !pb.try_insert(fingerprint, pb.bucket(i, fingerprint), u8::MAX) {
                 break;
             }
             inserted += 1;
         }
         (
             inserted,
-            inserted as f64 / (slots * entries_per_slot) as f64,
+            inserted as f64 / (buckets * entries_per_bucket) as f64,
         )
     }
 
