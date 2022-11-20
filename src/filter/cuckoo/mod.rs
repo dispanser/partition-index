@@ -4,10 +4,12 @@ use crate::filter::Filter;
 use rand::Rng;
 use std::{collections::hash_map::DefaultHasher, hash::Hasher};
 
+#[derive(Debug)]
 pub struct CuckooFilter {
     data: Vec<u16>, // 16 bit fingerprints, 0 marks invalid entry
     slots: u64,
     buckets_per_entry: u64,
+    entries: u64, // number of fingerprints stored in the filter
 }
 
 impl CuckooFilter {
@@ -16,15 +18,20 @@ impl CuckooFilter {
             data: vec![0; (slots * buckets_per_entry).try_into().unwrap()],
             slots,
             buckets_per_entry,
+            entries: 0,
         }
     }
 
-    // TODO: recursively call ourselves with some evicted key when all buckets are occupied
     fn try_insert(self: &mut Self, fingerprint: u16, slot: u64, tries_left: u8) -> bool {
-        let start_slot = ((slot % self.slots) * self.buckets_per_entry) as usize;
+        assert!(slot < self.slots, "{} < {}", slot, self.slots);
+        let start_slot = (slot * self.buckets_per_entry) as usize;
         for b in start_slot..(start_slot + self.buckets_per_entry as usize) {
-            if self.data[b] == 0 || self.data[b] == fingerprint {
+            if self.data[b] == fingerprint {
+                return true; // data already inserted, doing nothing
+            }
+            if self.data[b] == 0 {
                 self.data[b] = fingerprint;
+                self.entries += 1;
                 return true;
             }
         }
@@ -36,7 +43,7 @@ impl CuckooFilter {
         let evicted = self.data[bucket];
         // replace already, otherwise we immediately find our fingerprint-to-evict
         self.data[bucket] = fingerprint;
-        if self.try_insert(evicted, slot ^ hash(evicted as u64), tries_left - 1) {
+        if self.try_insert(evicted, self.flip_slot(evicted, slot), tries_left - 1) {
             true
         } else {
             self.data[bucket] = evicted; // restore previous entry
@@ -45,7 +52,8 @@ impl CuckooFilter {
     }
 
     fn find_in_slot(self: &Self, fingerprint: u16, slot: u64) -> bool {
-        let start_slot = ((slot % self.slots) * self.buckets_per_entry) as usize;
+        assert!(slot < self.slots);
+        let start_slot = (slot * self.buckets_per_entry) as usize;
         for b in start_slot..(start_slot + self.buckets_per_entry as usize) {
             if self.data[b] == fingerprint {
                 return true;
@@ -53,21 +61,32 @@ impl CuckooFilter {
         }
         false
     }
+
+    fn slot(self: &Self, key: u64, fingerprint: u16) -> u64 {
+        let fp_hash = hash(fingerprint.into()) % self.slots;
+        ((hash(key) % self.slots) ^ fp_hash) % self.slots
+    }
+
+    fn flip_slot(self: &Self, fingerprint: u16, slot: u64) -> u64 {
+        assert!(slot < self.slots, "slot {} >= max of {}", slot, self.slots);
+        let fp_hash = hash(fingerprint.into()) % self.slots;
+        (slot ^ fp_hash) % self.slots
+    }
 }
 
 impl Filter for CuckooFilter {
     fn insert(self: &mut Self, key: u64) {
         let fingerprint = fingerprint(key);
-        if !self.try_insert(fingerprint, hash(key), u8::MAX) {
-            panic!("failed to insert: implement eviction!");
+        if !self.try_insert(fingerprint, self.slot(key, fingerprint), u8::MAX) {
+            panic!("insert failed: occupancy limits reached.");
         }
     }
 
     fn contains(self: &Self, key: u64) -> bool {
         let fingerprint = fingerprint(key);
-        let b1 = hash(key);
-        self.find_in_slot(fingerprint, b1)
-            || self.find_in_slot(fingerprint, b1 ^ hash(fingerprint.into()))
+        let slot = self.slot(key, fingerprint);
+        let alt = self.flip_slot(fingerprint, slot);
+        self.find_in_slot(fingerprint, slot) || self.find_in_slot(fingerprint, alt)
     }
 }
 
@@ -141,7 +160,8 @@ mod occupancy_tests {
         let mut pb = CuckooFilter::new(slots, entries_per_slot);
         let mut inserted = 0;
         for i in 0..(slots * entries_per_slot + 1) {
-            if !pb.try_insert(fingerprint(i), hash(i), u8::MAX) {
+            let fingerprint = fingerprint(i);
+            if !pb.try_insert(fingerprint, pb.slot(i, fingerprint), u8::MAX) {
                 break;
             }
             inserted += 1;
@@ -153,30 +173,42 @@ mod occupancy_tests {
     }
 
     #[test]
+    fn one_entry() {
+        // 2^16, 2^17, ... gives a lot of fingerprint clashes. I think that's because our
+        // `fingerprint(key)` and `hash(key)` are basically the same function + % 2^16
+        // leads to same fingerprints consistenly hitting the same buckets.
+        // let (inserted, occupancy) = data_density(1 << 16 - 1, 1);
+        let (inserted, occupancy) = data_density(1 << 5 - 1, 1);
+        eprintln!("tp;inserted: {}, occupancy {}", inserted, occupancy);
+        // 50% is what the paper says, not sure how I got 70 ;)
+        assert!(occupancy > 0.70, "occupancy == {}, !> 0.70", occupancy);
+    }
+
+    #[test]
     /// according to the paper, occupancy should be 0.84
     fn two_entries() {
         // this has space for 2048 fingerprints
         let (inserted, occupancy) = data_density(1 << 10, 2);
         eprintln!("tp;inserted: {}, occupancy {}", inserted, occupancy);
         // 84% is what the paper says
-        assert!(occupancy > 0.84);
+        assert!(occupancy > 0.84, "occupancy == {}, !> 0.84", occupancy);
     }
 
     #[test]
     fn four_buckets() {
-        // this has space for 2048 fingerprints
+        // this has space for 4096 fingerprints
         let (inserted, occupancy) = data_density(1 << 10, 4);
         eprintln!("tp;inserted: {}, occupancy {}", inserted, occupancy);
         // 95% is what the paper says
-        assert!(occupancy > 0.94);
+        assert!(occupancy > 0.94, "occupancy == {}, !> 0.94", occupancy);
     }
 
     #[test]
     fn eight_buckets() {
-        // this has space for 2048 fingerprints
+        // this has space for 8192 fingerprints
         let (inserted, occupancy) = data_density(1 << 10, 8);
         eprintln!("tp;inserted: {}, occupancy {}", inserted, occupancy);
         // 98% is what the paper says
-        assert!(occupancy > 0.97);
+        assert!(occupancy > 0.97, "occupancy == {}, !> 0.97", occupancy);
     }
 }

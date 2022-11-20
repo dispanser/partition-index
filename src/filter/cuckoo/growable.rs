@@ -77,7 +77,7 @@ impl GrowableCuckooFilter {
 impl Filter for GrowableCuckooFilter {
     fn insert(self: &mut Self, key: u64) {
         let fingerprint = fingerprint(key);
-        self.try_insert(fingerprint, hash(key) % self.slots, 5)
+        self.try_insert(fingerprint, self.slot(key, fingerprint), 5)
     }
 
     fn contains(self: &Self, key: u64) -> bool {
