@@ -21,6 +21,18 @@ impl GrowableCuckooFilter {
         }
     }
 
+    pub fn entries_per_bucket(self: &Self) -> u64 {
+        self.entries_per_bucket
+    }
+
+    pub fn items(self: &Self) -> u64 {
+        self.items
+    }
+
+    pub fn buckets(self: &Self) -> u64 {
+        self.buckets
+    }
+
     fn try_insert(self: &mut Self, fingerprint: u16, bucket: u64, tries_left: u8) {
         assert!(bucket < self.buckets);
         let entries = &mut self.data[bucket as usize];
@@ -171,18 +183,16 @@ mod occupancy_tests {
     /// insert values into a cuckoo filter until it fails
     fn data_density(buckets: u64, entries_per_bucket: u64) -> (u64, f64) {
         let mut pb = GrowableCuckooFilter::new(buckets);
-        let mut inserted = 0;
-        for i in 0..(buckets * entries_per_bucket + 10000) {
+        for i in 0..(buckets * entries_per_bucket + 1) {
             pb.try_insert(fingerprint(i), hash(i) % buckets, u8::MAX);
             // break as soon as we cross the desired number of entries per bucket
             if pb.entries_per_bucket > entries_per_bucket {
                 break;
             }
-            inserted += 1;
         }
         (
-            inserted,
-            inserted as f64 / (buckets * entries_per_bucket) as f64,
+            pb.items - 1,
+            (pb.items - 1) as f64 / (buckets * entries_per_bucket) as f64,
         )
     }
 
@@ -201,21 +211,17 @@ mod occupancy_tests {
 
     #[test]
     fn one_entry() {
-        // 2^16, 2^17, ... gives a lot of fingerprint clashes. I think that's because our
-        // `fingerprint(key)` and `hash(key)` are basically the same function + % 2^16
-        // leads to same fingerprints consistenly hitting the same buckets.
-        // let (inserted, occupancy) = data_density(1 << 16 - 1, 1);
-        let (inserted, occupancy) = data_density(1 << 5 - 1, 1);
+        let (inserted, occupancy) = data_density((1 << 10) - 1, 1);
         eprintln!("tp;inserted: {}, occupancy {}", inserted, occupancy);
-        // 50% is what the paper says, not sure how I got 70 ;)
-        assert!(occupancy > 0.70, "occupancy == {}, !> 0.70", occupancy);
+        // 50% is what the paper says
+        assert!(occupancy > 0.50, "occupancy == {}, !> 0.50", occupancy);
     }
 
     #[test]
     /// according to the paper, occupancy should be 0.84
     fn two_entries() {
-        // this has space for 2048 fingerprints
-        let (inserted, occupancy) = data_density(1 << 10, 2);
+        // this has space for 2046 fingerprints
+        let (inserted, occupancy) = data_density((1 << 10) - 1, 2);
         eprintln!("tp;inserted: {}, occupancy {}", inserted, occupancy);
         // 84% is what the paper says
         assert!(occupancy > 0.84, "occupancy == {}, !> 0.84", occupancy);
@@ -223,19 +229,19 @@ mod occupancy_tests {
 
     #[test]
     fn four_buckets() {
-        // this has space for 4096 fingerprints
-        let (inserted, occupancy) = data_density(1 << 10, 4);
+        // this has space for 4092 fingerprints
+        let (inserted, occupancy) = data_density((1 << 10) - 1, 4);
         eprintln!("tp;inserted: {}, occupancy {}", inserted, occupancy);
         // 95% is what the paper says
-        assert!(occupancy > 0.94, "occupancy == {}, !> 0.94", occupancy);
+        assert!(occupancy > 0.95, "occupancy == {}, !> 0.95", occupancy);
     }
 
     #[test]
     fn eight_buckets() {
-        // this has space for 8192 fingerprints
-        let (inserted, occupancy) = data_density(1 << 10, 8);
+        // this has space for 8184 fingerprints
+        let (inserted, occupancy) = data_density((1 << 10) - 1, 8);
         eprintln!("tp;inserted: {}, occupancy {}", inserted, occupancy);
         // 98% is what the paper says
-        assert!(occupancy > 0.97, "occupancy == {}, !> 0.97", occupancy);
+        assert!(occupancy > 0.98, "occupancy == {}, !> 0.98", occupancy);
     }
 }

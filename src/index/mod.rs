@@ -1,11 +1,13 @@
 pub mod cuckoo;
 
 /// The underlying assumption here is that we're indexing "partitions"
-/// on a single, unknown column. The only representation we can retrieve
+/// on an unknown stream of data. The only representation we can retrieve
 /// is a hashed representation of all values to be indexed.
 /// This allows some flexibility down the road by allowing different types
 /// of partitions (parquet files, row groups, hive partitions, ...) or even
 /// heterogeneous data that has different shape or form.
+/// It is also possible to index multiple columns into the same index,
+/// even if the columns have different types.
 
 /// TODO:
 /// - how do we actually "reference" a partition that we identified?
@@ -15,7 +17,7 @@ pub mod cuckoo;
 /// - can we support indexing multiple columns?
 ///   - it feels wasteful to register a single partition multiple times
 ///   - metadata overlaps, and using the same offset in all indexes would be great
-/// - we could think of the partition itself as just some identifier of theaactual
+/// - we could think of the partition itself as just some identifier of the aactual
 ///   partition entity, and do `add(values: Iterator<Item = u64>, i: ID); in the Index
 ///   - I like that: we decouple the knowledge about structure, type, ... of partitions
 ///   - we pass in the minimum necessary thing to do its job.
@@ -48,7 +50,7 @@ where
     /// Add a partition to the index.
     /// @param values an iterator of the values stored in the partition
     /// @param partition the partition identifier to associate the values with
-    fn add(self: &mut Self, values: &dyn Iterator<Item = u64>, partition: &P);
+    fn add(self: &mut Self, values: impl Iterator<Item = u64>, partition: &P);
 
     /// Remove a partition from the index.
     /// @param partition to remove
@@ -69,9 +71,9 @@ pub mod tests {
         seed: u64, // we don't store actual sequence of values, but a seed.
     }
 
-    pub fn fill_index(index: &mut dyn PartitionIndex<TestPartition>, ps: &Vec<TestPartition>) {
+    pub fn fill_index(index: &mut impl PartitionIndex<TestPartition>, ps: &Vec<TestPartition>) {
         for partition in ps {
-            index.add(&create_partition_data(&partition), partition);
+            index.add(create_partition_data(&partition), partition);
         }
     }
 

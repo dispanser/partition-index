@@ -1,25 +1,23 @@
+use crate::filter::cuckoo::growable;
+use crate::filter::Filter;
 use crate::index::{PartitionFilter, PartitionIndex};
 
 pub struct CuckooIndex<P>
 where
     P: Clone,
 {
-    pub partitions: Vec<P>,
-    slots: Vec<Vec<u16>>,
-    offset: usize,
+    partitions: Vec<P>,
+    buckets: Vec<Vec<u16>>,
 }
 
 impl<P> CuckooIndex<P>
 where
     P: std::clone::Clone,
 {
-    pub fn new(num_slots: u64) -> Self {
-        // let mut slots = Vec::new();
-        // slots.resize_with(num_slots as usize, || vec![]);
+    pub fn new(buckets: u64) -> Self {
         Self {
             partitions: vec![],
-            slots: vec![vec![]; num_slots as usize],
-            offset: 0,
+            buckets: vec![vec![]; buckets as usize],
         }
     }
 }
@@ -37,10 +35,13 @@ impl<P> PartitionIndex<P> for CuckooIndex<P>
 where
     P: std::clone::Clone,
 {
-    fn add(self: &mut Self, values: &dyn Iterator<Item = u64>, partition: &P) {
-        // the width (number of entries per slot) we're currently working with
-        let mut width = 1usize;
-        let mut items = 0usize;
+    fn add(self: &mut Self, values: impl Iterator<Item = u64>, partition: &P) {
+        let mut f = growable::GrowableCuckooFilter::new(self.buckets.len() as u64);
+        for v in values.into_iter() {
+            f.insert(v);
+        }
+        self.partitions.push(partition.clone());
+        // values.for_each(|v| f.insert(v));
         todo!()
     }
 
