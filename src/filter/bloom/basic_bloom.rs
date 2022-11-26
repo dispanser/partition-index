@@ -1,4 +1,4 @@
-use crate::filter::Filter;
+use crate::filter::{Filter, InsertResult};
 use std::{collections::hash_map::DefaultHasher, hash::Hasher};
 
 /// Basic implementation of a bloom filter following the paper as closely as I can.
@@ -20,7 +20,7 @@ impl PaperBloom {
 }
 
 impl Filter for PaperBloom {
-    fn insert(self: &mut Self, key: u64) {
+    fn insert(self: &mut Self, key: u64) -> InsertResult {
         let mut hasher = DefaultHasher::new();
         let mut key_rot = key;
         let mut iteration = self.d;
@@ -36,6 +36,7 @@ impl Filter for PaperBloom {
                 iteration -= 1;
             }
         }
+        InsertResult::Success
     }
 
     fn contains(self: &Self, key: u64) -> bool {

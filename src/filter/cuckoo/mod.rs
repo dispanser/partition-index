@@ -4,6 +4,8 @@ use crate::filter::Filter;
 use rand::Rng;
 use std::{collections::hash_map::DefaultHasher, hash::Hasher};
 
+use super::InsertResult;
+
 #[derive(Debug)]
 pub struct CuckooFilter {
     data: Vec<u16>, // 16 bit fingerprints, 0 marks invalid entry
@@ -26,32 +28,33 @@ impl CuckooFilter {
         }
     }
 
-    fn try_insert(self: &mut Self, fingerprint: u16, bucket: u64, tries_left: u8) -> bool {
+    fn try_insert(self: &mut Self, fingerprint: u16, bucket: u64, tries_left: u8) -> InsertResult {
         assert!(bucket < self.buckets, "{} < {}", bucket, self.buckets);
         let start_slot = (bucket * self.entries_per_bucket) as usize;
         for b in start_slot..(start_slot + self.entries_per_bucket as usize) {
             if self.data[b] == fingerprint {
-                return true; // data already inserted, doing nothing
+                return InsertResult::Duplicate;
             }
             if self.data[b] == 0 {
                 self.data[b] = fingerprint;
                 self.items += 1;
-                return true;
+                return InsertResult::Success;
             }
         }
         if tries_left == 0 {
-            return false;
+            return InsertResult::Rejected;
         }
         // Evicting the first entry. Determined by a fair dice roll.
         let slot = start_slot + rand::thread_rng().gen_range(0..self.entries_per_bucket) as usize;
         let evicted = self.data[slot];
         // replace already, otherwise we immediately find our fingerprint-to-evict
         self.data[slot] = fingerprint;
-        if self.try_insert(evicted, self.flip_bucket(evicted, bucket), tries_left - 1) {
-            true
-        } else {
+        let result = self.try_insert(evicted, self.flip_bucket(evicted, bucket), tries_left - 1);
+        if result == InsertResult::Rejected {
             self.data[slot] = evicted; // restore previous entry
-            false
+            InsertResult::Rejected
+        } else {
+            result
         }
     }
 
@@ -84,10 +87,16 @@ impl CuckooFilter {
 }
 
 impl Filter for CuckooFilter {
-    fn insert(self: &mut Self, key: u64) {
+    fn insert(self: &mut Self, key: u64) -> InsertResult {
         let fingerprint = fingerprint(key);
-        if !self.try_insert(fingerprint, self.bucket(key, fingerprint), u8::MAX) {
-            panic!("insert failed: occupancy limits reached.");
+        let bucket = self.bucket(key, fingerprint);
+        let other = self.flip_bucket(fingerprint, bucket);
+        if self.find_in_bucket(fingerprint, bucket) || self.find_in_bucket(fingerprint, other) {
+            InsertResult::Duplicate
+        } else if self.find_in_bucket(0, other) {
+            self.try_insert(fingerprint, other, u8::MAX)
+        } else {
+            self.try_insert(fingerprint, bucket, u8::MAX)
         }
     }
 
@@ -127,9 +136,20 @@ fn fingerprint(key: u64) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::CuckooFilter;
-    use crate::filter::correctness_tests::*;
+    use crate::filter::{correctness_tests::*, Filter, InsertResult};
 
     const INPUTS: u64 = 10_000;
+
+    #[test]
+    fn no_duplicate_inserts() {
+        let mut cuckoo = CuckooFilter::new(10, 1);
+        // 0 goes to buckets 0 and 9, occupying bucket 0 after insert
+        assert_eq!(cuckoo.insert(0), InsertResult::Success);
+        // 2 goes to buckets 0 and 2, evicting key 0 to bucket 9 on insert
+        assert_eq!(cuckoo.insert(2), InsertResult::Success);
+        // 0 inserted again, should not be inserted but identify the duplicate insert
+        assert_eq!(cuckoo.insert(0), InsertResult::Duplicate);
+    }
 
     #[test]
     fn no_false_negatives() {
@@ -160,7 +180,7 @@ mod tests {
 
 #[cfg(test)]
 mod occupancy_tests {
-    use crate::filter::cuckoo::fingerprint;
+    use crate::filter::{cuckoo::fingerprint, InsertResult};
 
     use super::CuckooFilter;
 
@@ -170,7 +190,9 @@ mod occupancy_tests {
         let mut inserted = 0;
         for i in 0..(buckets * entries_per_bucket + 1) {
             let fingerprint = fingerprint(i);
-            if !pb.try_insert(fingerprint, pb.bucket(i, fingerprint), u8::MAX) {
+            if pb.try_insert(fingerprint, pb.bucket(i, fingerprint), u8::MAX)
+                == InsertResult::Rejected
+            {
                 break;
             }
             inserted += 1;
