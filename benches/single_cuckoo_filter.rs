@@ -7,7 +7,9 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 
 fn insert_n(n: u64, slots: u64, entries_per_slot: u64) -> CuckooFilter {
     let mut filter = CuckooFilter::new(slots, entries_per_slot);
-    (0..n).for_each(|key| filter.insert(key));
+    (0..n).for_each(|key| {
+        filter.insert(key);
+    });
     filter
 }
 

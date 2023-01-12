@@ -40,7 +40,7 @@ where
     /// Query matching partitions for a given value
     /// TODO: what's the result type here? It's either the partition, or
     /// some kind of partition ID.
-    fn query(value: u64) -> Vec<P>;
+    fn query(self: &Self, value: u64) -> Vec<P>;
 }
 
 pub trait PartitionIndex<P>
@@ -59,19 +59,20 @@ where
 
 #[cfg(test)]
 pub mod tests {
+    use crate::index::PartitionFilter;
     use rand::distributions::Uniform;
     use rand::{Rng, SeedableRng};
 
     use super::PartitionIndex;
 
-    #[derive(Clone)]
+    #[derive(Clone, PartialEq, Eq)]
     pub struct TestPartition {
-        id: usize, // counting upwards from zero, the simplest possible ID
-        size: u32,
-        seed: u64, // we don't store actual sequence of values, but a seed.
+        pub id: usize, // counting upwards from zero, the simplest possible ID
+        pub size: u32,
+        pub seed: u64, // we don't store actual sequence of values, but a seed.
     }
 
-    pub fn fill_index(index: &mut impl PartitionIndex<TestPartition>, ps: &Vec<TestPartition>) {
+    pub fn fill_index(index: &mut impl PartitionIndex<TestPartition>, ps: &[TestPartition]) {
         for partition in ps {
             index.add(create_partition_data(&partition), partition);
         }
@@ -82,6 +83,14 @@ pub mod tests {
         data_rng
             .sample_iter(Uniform::new_inclusive(u64::MIN, u64::MAX))
             .take(partition.size as usize)
+    }
+
+    pub fn query_result_contains(
+        index: &impl PartitionFilter<TestPartition>,
+        value: u64,
+        partition: &TestPartition,
+    ) -> bool {
+        index.query(value).contains(partition)
     }
 
     pub fn create_test_data(

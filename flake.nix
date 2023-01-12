@@ -36,6 +36,7 @@
             (rust-bin.stable.latest.default.override {
               extensions = ["rust-src"];
             })
+            evcxr
             sccache
           ];
           LIBCLANG_PATH="${pkgs.llvmPackages_12.clang-unwrapped.lib + /lib}";

@@ -7,7 +7,9 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 
 fn insert_n(n: u64, d: u64, m: u64) -> PaperBloom {
     let mut filter = PaperBloom::new(d, m);
-    (0..n).for_each(|key| filter.insert(key));
+    (0..n).for_each(|key| {
+        filter.insert(key);
+    });
     filter
 }
 

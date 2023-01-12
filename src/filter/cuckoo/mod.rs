@@ -49,7 +49,11 @@ impl CuckooFilter {
         let evicted = self.data[slot];
         // replace already, otherwise we immediately find our fingerprint-to-evict
         self.data[slot] = fingerprint;
-        let result = self.try_insert(evicted, self.flip_bucket(evicted, bucket), tries_left - 1);
+        let result = self.try_insert(
+            evicted,
+            flip_bucket(evicted, bucket, self.buckets),
+            tries_left - 1,
+        );
         if result == InsertResult::Rejected {
             self.data[slot] = evicted; // restore previous entry
             InsertResult::Rejected
@@ -68,29 +72,40 @@ impl CuckooFilter {
         }
         false
     }
+}
 
-    fn bucket(self: &Self, key: u64, fingerprint: u16) -> u64 {
-        let fp_hash = hash(fingerprint.into()) % self.buckets;
-        ((hash(key) % self.buckets) ^ fp_hash) % self.buckets
-    }
+pub fn bucket(key: u64, buckets: u64) -> u64 {
+    // let fp_hash = hash(fingerprint.into()) % buckets;
+    // TODO: can we make this do without all the xor?
+    // using the all-new "fp_hash - b" approach should obsolete that computation
+    // ((hash(key) % buckets) ^ fp_hash) % buckets
+    hash(key) % buckets
+}
 
-    fn flip_bucket(self: &Self, fingerprint: u16, bucket: u64) -> u64 {
-        assert!(
-            bucket < self.buckets,
-            "bucket {} >= max of {}",
-            bucket,
-            self.buckets
-        );
-        let fp_hash = hash(fingerprint.into()) % self.buckets;
-        (bucket ^ fp_hash) % self.buckets
-    }
+pub fn flip_bucket(fingerprint: u16, bucket: u64, buckets: u64) -> u64 {
+    // assert!(bucket < buckets, "bucket {} >= max of {}", bucket, buckets);
+    let fp_hash = hash(fingerprint.into());
+    // eprintln!("tp;{} <> {}", bucket ^ fp_hash ^ fp_hash, bucket);
+    // assert_eq!(((bucket ^ fp_hash) % buckets) ^ fp_hash, bucket);
+    // (bucket ^ fp_hash) % buckets
+    eprintln!(
+        "tp;flip_bucket({}, {}, {}) -> {} -> {} -> {}",
+        fingerprint,
+        bucket,
+        buckets,
+        fp_hash,
+        fp_hash.wrapping_sub(bucket),
+        fp_hash.wrapping_sub(bucket) % buckets,
+    );
+    fp_hash.wrapping_sub(bucket) % buckets
+    // (fp_hash - bucket) % buckets
 }
 
 impl Filter for CuckooFilter {
     fn insert(self: &mut Self, key: u64) -> InsertResult {
         let fingerprint = fingerprint(key);
-        let bucket = self.bucket(key, fingerprint);
-        let other = self.flip_bucket(fingerprint, bucket);
+        let bucket = bucket(key, self.buckets);
+        let other = flip_bucket(fingerprint, bucket, self.buckets);
         if self.find_in_bucket(fingerprint, bucket) || self.find_in_bucket(fingerprint, other) {
             InsertResult::Duplicate
         } else if self.find_in_bucket(0, other) {
@@ -102,8 +117,8 @@ impl Filter for CuckooFilter {
 
     fn contains(self: &Self, key: u64) -> bool {
         let fingerprint = fingerprint(key);
-        let bucket = self.bucket(key, fingerprint);
-        let alt = self.flip_bucket(fingerprint, bucket);
+        let bucket = bucket(key, self.buckets);
+        let alt = flip_bucket(fingerprint, bucket, self.buckets);
         self.find_in_bucket(fingerprint, bucket) || self.find_in_bucket(fingerprint, alt)
     }
 }
@@ -120,7 +135,7 @@ pub fn hash(key: u64) -> u64 {
 /// 0 is an invalid fingerprint as it demarks an empty entry, so another
 /// round of hashing is done until a valid fingerprint is created.
 /// Valid fingerprints have a range of [1, 65536)
-fn fingerprint(key: u64) -> u16 {
+pub fn fingerprint(key: u64) -> u16 {
     let mut hasher = DefaultHasher::new();
     let mut key_rot = key;
     loop {
@@ -182,7 +197,7 @@ mod tests {
 mod occupancy_tests {
     use crate::filter::{cuckoo::fingerprint, InsertResult};
 
-    use super::CuckooFilter;
+    use super::{bucket, CuckooFilter};
 
     /// insert values into a cuckoo filter until it fails
     fn data_density(buckets: u64, entries_per_bucket: u64) -> (u64, f64) {
@@ -190,9 +205,8 @@ mod occupancy_tests {
         let mut inserted = 0;
         for i in 0..(buckets * entries_per_bucket + 1) {
             let fingerprint = fingerprint(i);
-            if pb.try_insert(fingerprint, pb.bucket(i, fingerprint), u8::MAX)
-                == InsertResult::Rejected
-            {
+            let bucket = bucket(i, buckets);
+            if pb.try_insert(fingerprint, bucket, u8::MAX) == InsertResult::Rejected {
                 break;
             }
             inserted += 1;
@@ -241,5 +255,33 @@ mod occupancy_tests {
         eprintln!("tp;inserted: {}, occupancy {}", inserted, occupancy);
         // 98% is what the paper says
         assert!(occupancy > 0.97, "occupancy == {}, !> 0.97", occupancy);
+    }
+}
+
+#[cfg(test)]
+mod prop_tests {
+
+    use crate::filter::cuckoo::{bucket, fingerprint, flip_bucket};
+    use proptest::prelude::*;
+
+    fn bucket_roundtrip(key: u64, buckets: u64) {
+        let fingerprint = fingerprint(key);
+        let b0 = bucket(key, buckets);
+        let b1 = flip_bucket(fingerprint, b0, buckets);
+        let b2 = flip_bucket(fingerprint, b1, buckets);
+        assert_eq!(b0, b2, "b0 != b2: {} != {}", b0, b2);
+    }
+
+    proptest! {
+        #[test]
+        fn bucket_roundtrip_prop(key in 0 .. u64::MAX, buckets in 3u64..u32::MAX.into()) {
+            bucket_roundtrip(key, buckets);
+        }
+
+        #[test]
+        fn bucket_roundtrip_prop_pow_of_2(key in 0 .. u64::MAX, buckets in 3u32..30) {
+            let buckets = 2u64.pow(buckets);
+            bucket_roundtrip(key, buckets);
+        }
     }
 }

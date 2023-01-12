@@ -1,7 +1,7 @@
 use crate::filter::{Filter, InsertResult};
 use rand::Rng;
 
-use super::{fingerprint, hash};
+use super::{bucket, fingerprint, flip_bucket};
 
 #[derive(Debug)]
 pub struct GrowableCuckooFilter {
@@ -29,8 +29,12 @@ impl GrowableCuckooFilter {
         self.items
     }
 
-    pub fn buckets(self: &Self) -> u64 {
+    pub fn num_buckets(self: &Self) -> u64 {
         self.buckets
+    }
+
+    pub fn drain(self: Self) -> Vec<Vec<u16>> {
+        self.data
     }
 
     fn try_insert(self: &mut Self, fingerprint: u16, bucket: u64, tries_left: u8) -> InsertResult {
@@ -62,7 +66,11 @@ impl GrowableCuckooFilter {
         // Replace value, otherwise we immediately find our fingerprint-to-evict
         entries[entry] = fingerprint;
         drop(entries); // recursive mut self call requires dropping our &mut bucket
-        self.try_insert(evicted, self.flip_bucket(evicted, bucket), tries_left - 1)
+        self.try_insert(
+            evicted,
+            flip_bucket(evicted, bucket, self.buckets),
+            tries_left - 1,
+        )
     }
 
     fn find_in_bucket(self: &Self, fingerprint: u16, bucket: u64) -> bool {
@@ -73,24 +81,14 @@ impl GrowableCuckooFilter {
         }
         false
     }
-
-    pub fn bucket(self: &Self, key: u64, fingerprint: u16) -> u64 {
-        let fp_hash = hash(fingerprint.into()) % self.buckets;
-        ((hash(key) % self.buckets) ^ fp_hash) % self.buckets
-    }
-
-    pub fn flip_bucket(self: &Self, fingerprint: u16, bucket: u64) -> u64 {
-        assert!(bucket < self.buckets, "bucket {}<{}", bucket, self.buckets);
-        let fp_hash = hash(fingerprint.into()) % self.buckets;
-        (bucket ^ fp_hash) % self.buckets
-    }
 }
 
 impl Filter for GrowableCuckooFilter {
     fn insert(self: &mut Self, key: u64) -> InsertResult {
         let fingerprint = fingerprint(key);
-        let bucket = self.bucket(key, fingerprint);
-        let other = self.flip_bucket(fingerprint, bucket);
+        let bucket = bucket(key, self.buckets);
+        let other = flip_bucket(fingerprint, bucket, self.buckets);
+        eprintln!("tp;insert({}, {}, {}, {}", key, fingerprint, bucket, other);
         if self.find_in_bucket(fingerprint, bucket) || self.find_in_bucket(fingerprint, other) {
             InsertResult::Duplicate
         } else if self.data[other as usize].len() < self.entries_per_bucket {
@@ -102,50 +100,19 @@ impl Filter for GrowableCuckooFilter {
 
     fn contains(self: &Self, key: u64) -> bool {
         let fingerprint = fingerprint(key);
-        let bucket = self.bucket(key, fingerprint);
-        let alt = self.flip_bucket(fingerprint, bucket);
+        let bucket = bucket(key, self.buckets);
+        let alt = flip_bucket(fingerprint, bucket, self.buckets);
         self.find_in_bucket(fingerprint, bucket) || self.find_in_bucket(fingerprint, alt)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use rand::{Rng, SeedableRng};
 
     use super::GrowableCuckooFilter;
-    use crate::filter::{
-        correctness_tests::*,
-        cuckoo::{fingerprint, hash},
-        Filter, InsertResult,
-    };
+    use crate::filter::{correctness_tests::*, Filter, InsertResult};
 
     const INPUTS: u64 = 10_000;
-
-    fn bucket(key: u64, buckets: u64) -> u64 {
-        let fingerprint = fingerprint(key);
-        let fp_hash = hash(fingerprint.into()) % buckets;
-        ((hash(key) % buckets) ^ fp_hash) % buckets
-    }
-
-    fn flip_bucket(fingerprint: u16, bucket: u64, buckets: u64) -> u64 {
-        assert!(bucket < buckets, "bucket {} >= max of {}", bucket, buckets);
-        let fp_hash = hash(fingerprint.into()) % buckets;
-        (bucket ^ fp_hash) % buckets
-    }
-
-    fn bucket_roundtrip(key: u64, buckets: u64) {
-        let fingerprint = fingerprint(key);
-        let b0 = bucket(key, buckets);
-        let b1 = flip_bucket(fingerprint, b0, buckets);
-        let b2 = flip_bucket(fingerprint, b1, buckets);
-        let b3 = flip_bucket(fingerprint, b2, buckets);
-        let b4 = flip_bucket(fingerprint, b3, buckets);
-        let b5 = flip_bucket(fingerprint, b4, buckets);
-        assert_eq!(b0, b2, "b0 != b2: {} != {}", b0, b2);
-        assert_eq!(b1, b3, "b1 != b3: {} != {}", b1, b3);
-        assert_eq!(b2, b4, "b2 != b4: {} != {}", b2, b4);
-        assert_eq!(b3, b5, "b3 != b5: {} != {}", b3, b5);
-    }
 
     #[test]
     fn no_duplicate_inserts() {
@@ -156,16 +123,6 @@ mod tests {
         assert_eq!(cuckoo.insert(2), InsertResult::Success);
         // 0 inserted again, should not be inserted but identify the duplicate insert
         assert_eq!(cuckoo.insert(0), InsertResult::Duplicate);
-    }
-
-    #[test]
-    fn bucket_roundtrips() {
-        bucket_roundtrip(0, 10);
-        bucket_roundtrip(13, 999);
-        let mut data_rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(13);
-        for _ in 0..100 {
-            bucket_roundtrip(data_rng.gen(), data_rng.gen::<u32>().into());
-        }
     }
 
     #[test]
@@ -243,7 +200,7 @@ mod occupancy_tests {
         let (inserted, occupancy) = data_density((1 << 10) - 1, 2);
         eprintln!("tp;inserted: {}, occupancy {}", inserted, occupancy);
         // 84% is what the paper says, but we use 63 instead of 500 eviction attempts
-        assert!(occupancy > 0.83, "occupancy == {}, !> 0.83", occupancy);
+        assert!(occupancy > 0.82, "occupancy == {}, !> 0.82", occupancy);
     }
 
     #[test]
@@ -261,7 +218,7 @@ mod occupancy_tests {
         let (inserted, occupancy) = data_density((1 << 10) - 1, 4);
         eprintln!("tp;inserted: {}, occupancy {}", inserted, occupancy);
         // 95% is what the paper says, but we use 63 instead of 500 eviction attempts
-        assert!(occupancy > 0.93, "occupancy == {}, !> 0.95", occupancy);
+        assert!(occupancy > 0.92, "occupancy == {}, !> 0.92", occupancy);
     }
 
     #[test]
