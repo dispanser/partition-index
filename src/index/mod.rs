@@ -54,12 +54,11 @@ where
 
     /// Remove a partition from the index.
     /// @param partition to remove
-    fn remove(self: &mut Self, partition: P);
+    fn remove(self: &mut Self, partition: &P);
 }
 
 #[cfg(test)]
 pub mod tests {
-    use crate::index::PartitionFilter;
     use rand::distributions::Uniform;
     use rand::{Rng, SeedableRng};
 
@@ -83,14 +82,6 @@ pub mod tests {
         data_rng
             .sample_iter(Uniform::new_inclusive(u64::MIN, u64::MAX))
             .take(partition.size as usize)
-    }
-
-    pub fn query_result_contains(
-        index: &impl PartitionFilter<TestPartition>,
-        value: u64,
-        partition: &TestPartition,
-    ) -> bool {
-        index.query(value).contains(partition)
     }
 
     pub fn create_test_data(

@@ -2,11 +2,20 @@ use crate::filter::cuckoo::{bucket, fingerprint, flip_bucket, growable};
 use crate::filter::Filter;
 use crate::index::{PartitionFilter, PartitionIndex};
 
+struct PartitionInfo<P>
+where
+    P: Clone,
+{
+    partition: P,
+    entries: usize,
+    active: bool,
+}
+
 pub struct CuckooIndex<P>
 where
     P: Clone,
 {
-    partitions: Vec<(P, usize)>,
+    partitions: Vec<PartitionInfo<P>>,
     buckets: Vec<Vec<u16>>,
     slots: usize,
 }
@@ -32,38 +41,38 @@ where
         let fingerprint = fingerprint(key);
         let bucket1 = bucket(key, self.buckets.len() as u64);
         let bucket2 = flip_bucket(fingerprint, bucket1, self.buckets.len() as u64) as usize;
-        eprintln!(
-            "tp;query({}, {}, {}, {}",
-            key, fingerprint, bucket1, bucket2
-        );
         let mut pos = 0;
         let mut result = vec![];
-        for (p, len) in &self.partitions {
-            for l in 0..*len {
-                if self.buckets[bucket1 as usize][pos + l] == fingerprint
-                    || self.buckets[bucket2][pos + l] == fingerprint
-                {
-                    result.push(p.clone());
+        for p in &self.partitions {
+            if p.active {
+                for l in 0..p.entries {
+                    if self.buckets[bucket1 as usize][pos + l] == fingerprint
+                        || self.buckets[bucket2][pos + l] == fingerprint
+                    {
+                        result.push(p.partition.clone());
+                    }
                 }
             }
-            pos += len;
+            pos += p.entries;
         }
-
         result
     }
 }
 
 impl<P> PartitionIndex<P> for CuckooIndex<P>
 where
-    P: std::clone::Clone,
+    P: std::clone::Clone + PartialEq
 {
     fn add(self: &mut Self, values: impl Iterator<Item = u64>, partition: &P) {
         let mut f = growable::GrowableCuckooFilter::new(self.buckets.len() as u64);
         for v in values.into_iter() {
             f.insert(v);
         }
-        self.partitions
-            .push((partition.clone(), f.entries_per_bucket()));
+        self.partitions.push(PartitionInfo {
+            partition: partition.clone(),
+            entries: f.entries_per_bucket(),
+            active: true,
+        });
         self.slots += f.entries_per_bucket();
         for (partition_values, bucket) in f.drain().iter_mut().zip(self.buckets.iter_mut()) {
             bucket.append(partition_values);
@@ -74,8 +83,12 @@ where
         }
     }
 
-    fn remove(self: &mut Self, _partition: P) {
-        todo!()
+    fn remove(self: &mut Self, to_be_removed: &P) {
+        for p in self.partitions.iter_mut() {
+            if &p.partition == to_be_removed {
+                p.active = false;
+            }
+        }
     }
 }
 
@@ -84,6 +97,7 @@ mod tests {
     use crate::index::{
         cuckoo::CuckooIndex,
         tests::{self, TestPartition},
+        PartitionFilter, PartitionIndex,
     };
 
     static SEED: u64 = 1337;
@@ -94,25 +108,22 @@ mod tests {
         let mut index: CuckooIndex<TestPartition> = CuckooIndex::new(2500);
         tests::fill_index(&mut index, &partitions);
         index.buckets.iter().for_each(|b| {
-            assert_eq!(b.len(), index.buckets[0].len());
+            assert_eq!(b.len(), index.slots);
             assert!(b.len() >= partitions.len());
         });
     }
 
     #[test]
     fn query_index() {
-        let partitions = &tests::create_test_data(10, (5, 17), SEED)[9..];
-        let mut index: CuckooIndex<TestPartition> = CuckooIndex::new(5);
+        // let partitions = &tests::create_test_data(10, (5, 17), SEED)[9..];
+        let partitions = &tests::create_test_data(100, (999, 4999), SEED);
+        let mut index: CuckooIndex<TestPartition> = CuckooIndex::new(800);
         tests::fill_index(&mut index, &partitions);
-
-        for b in &index.buckets {
-            eprintln!("tp;b[]: {:?}", b);
-        }
 
         for p in partitions {
             if let Some(first_val) = tests::create_partition_data(&p).next() {
                 assert!(
-                    tests::query_result_contains(&index, first_val, &p),
+                    index.query(first_val).contains(&p),
                     "querying partitions for '{}' does not yield expected {:?}",
                     first_val,
                     &p.id
@@ -120,6 +131,22 @@ mod tests {
             } else {
                 panic!("could not create value for partition");
             }
+        }
+    }
+
+    #[test]
+    fn dont_yield_removed_partitions() {
+        let partitions = &tests::create_test_data(10, (99, 499), SEED);
+        let mut index: CuckooIndex<TestPartition> = CuckooIndex::new(80);
+        tests::fill_index(&mut index, &partitions);
+        index.remove(&partitions[3]);
+        if let Some(first_val)  = tests::create_partition_data(&partitions[3]).next() {
+            assert!(
+                !index.query(first_val).contains(&partitions[3]),
+                "querying partitions for '{}' should not yield deleted partition {:?}",
+                first_val,
+                &partitions[3].id
+            );
         }
     }
 }

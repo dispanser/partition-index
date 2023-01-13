@@ -72,11 +72,5 @@ pub fn hash_column(chunks: read::FileReader<File>) -> Result<(), Error> {
         }
         assert!(!chunk.is_empty());
     }
-    eprintln!(
-        "tp;Contains: {} rows, {} elements, {} distincts",
-        rows,
-        elems,
-        distinct.len()
-    );
     Ok(())
 }
