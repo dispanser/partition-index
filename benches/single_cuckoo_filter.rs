@@ -1,7 +1,7 @@
-extern crate bloom_lake;
+extern crate partition_index;
 
-use bloom_lake::filter::cuckoo::CuckooFilter;
-use bloom_lake::filter::Filter;
+use partition_index::filter::cuckoo::CuckooFilter;
+use partition_index::filter::Filter;
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 

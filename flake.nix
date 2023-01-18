@@ -20,7 +20,7 @@
         myMkShell = pkgs.mkShell.override { stdenv = pkgs.clang12Stdenv; };
       in {
         devShell = myMkShell rec {
-          name = "bloom-lake";
+          name = "partition-index";
           nativeBuildInputs = with pkgs; [ 
             flatbuffers
             protobuf

@@ -157,17 +157,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
-name = "bloom-lake"
-version = "0.1.0"
-dependencies = [
- "arrow2",
- "criterion",
- "proptest",
- "rand",
- "rand_xoshiro",
-]
-
-[[package]]
 name = "brotli"
 version = "3.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -759,6 +748,17 @@ dependencies = [
  "snap",
  "streaming-decompression",
  "zstd",
+]
+
+[[package]]
+name = "partition-index"
+version = "0.1.0"
+dependencies = [
+ "arrow2",
+ "criterion",
+ "proptest",
+ "rand",
+ "rand_xoshiro",
 ]
 
 [[package]]
