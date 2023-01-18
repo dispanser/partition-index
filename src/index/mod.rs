@@ -1,4 +1,4 @@
-pub mod cuckoo;
+pub mod in_memory;
 
 /// The underlying assumption here is that we're indexing "partitions"
 /// on an unknown stream of data. The only representation we can retrieve

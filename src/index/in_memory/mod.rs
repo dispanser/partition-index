@@ -95,7 +95,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::index::{
-        cuckoo::CuckooIndex,
+        in_memory::CuckooIndex,
         tests::{self, TestPartition},
         PartitionFilter, PartitionIndex,
     };
