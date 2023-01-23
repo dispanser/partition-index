@@ -1,0 +1,15 @@
+[devshell]
+packages = [
+    "rustup",
+    "cargo-watch",
+    "evcxr",
+    "flatbuffers",
+    "protobuf",
+    "gnuplot",
+]
+
+[devshell.startup.rust]
+text = """
+rustup default stable
+rustup component add rust-src
+"""

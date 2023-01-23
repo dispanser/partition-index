@@ -50,10 +50,6 @@ impl GrowableCuckooFilter {
         // Insert failed, no space, let's grow
         if tries_left == 0 {
             self.entries_per_bucket += 1;
-            eprintln!(
-                "tp;growing to {}, size {}, buckets {}",
-                self.entries_per_bucket, self.items, self.buckets
-            );
             entries.push(fingerprint);
             self.items += 1;
             return InsertResult::Success;

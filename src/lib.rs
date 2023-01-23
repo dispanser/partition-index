@@ -53,8 +53,8 @@ pub fn read_parquet(file_path: &String) -> Result<read::FileReader<File>, Error>
 }
 
 pub fn hash_column(chunks: read::FileReader<File>) -> Result<(), Error> {
-    let mut rows = 0;
-    let mut elems = 0;
+    let mut _rows = 0;
+    let mut _elems = 0;
     let mut distinct: HashSet<i32> = HashSet::new();
     for maybe_chunk in chunks.take(3) {
         let chunk = maybe_chunk?;
@@ -62,11 +62,11 @@ pub fn hash_column(chunks: read::FileReader<File>) -> Result<(), Error> {
             .as_any()
             .downcast_ref::<array::Int32Array>()
             .unwrap();
-        rows += array.len();
+        _rows += array.len();
         for maybe_value in array.iter() {
             if let Some(value) = maybe_value {
                 // let bb: u64 = hash.into();
-                elems += 1;
+                _elems += 1;
                 distinct.insert(*value);
             }
         }

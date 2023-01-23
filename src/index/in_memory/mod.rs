@@ -2,28 +2,21 @@ use crate::filter::cuckoo::{bucket, fingerprint, flip_bucket, growable};
 use crate::filter::Filter;
 use crate::index::{PartitionFilter, PartitionIndex};
 
-struct PartitionInfo<P>
-where
-    P: Clone,
-{
-    partition: P,
-    entries: usize,
-    active: bool,
+#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PartitionInfo<P> {
+    pub(crate) partition: P,
+    pub(crate) entries: usize,
+    pub(crate) active: bool,
 }
 
-pub struct CuckooIndex<P>
-where
-    P: Clone,
-{
-    partitions: Vec<PartitionInfo<P>>,
-    buckets: Vec<Vec<u16>>,
-    slots: usize,
+#[derive(Debug, PartialEq, Eq)]
+pub struct CuckooIndex<P> {
+    pub(crate) partitions: Vec<PartitionInfo<P>>,
+    pub(crate) buckets: Vec<Vec<u16>>,
+    pub(crate) slots: usize,
 }
 
-impl<P> CuckooIndex<P>
-where
-    P: std::clone::Clone,
-{
+impl<P> CuckooIndex<P> {
     pub fn new(buckets: u64) -> Self {
         Self {
             partitions: vec![],
@@ -35,12 +28,16 @@ where
 
 impl<P> PartitionFilter<P> for CuckooIndex<P>
 where
-    P: std::clone::Clone,
+    P: Clone,
 {
-    fn query(self: &Self, key: u64) -> Vec<P> {
+    fn query(self: &Self, key: u64) -> anyhow::Result<Vec<P>> {
         let fingerprint = fingerprint(key);
         let bucket1 = bucket(key, self.buckets.len() as u64);
         let bucket2 = flip_bucket(fingerprint, bucket1, self.buckets.len() as u64) as usize;
+        eprintln!(
+            "tp;query_mem({}): {}@[{}, {}]",
+            key, fingerprint, bucket1, bucket2
+        );
         let mut pos = 0;
         let mut result = vec![];
         for p in &self.partitions {
@@ -55,21 +52,21 @@ where
             }
             pos += p.entries;
         }
-        result
+        Ok(result)
     }
 }
 
 impl<P> PartitionIndex<P> for CuckooIndex<P>
 where
-    P: std::clone::Clone + PartialEq
+    P: PartialEq,
 {
-    fn add(self: &mut Self, values: impl Iterator<Item = u64>, partition: &P) {
+    fn add(self: &mut Self, values: impl Iterator<Item = u64>, partition: P) {
         let mut f = growable::GrowableCuckooFilter::new(self.buckets.len() as u64);
         for v in values.into_iter() {
             f.insert(v);
         }
         self.partitions.push(PartitionInfo {
-            partition: partition.clone(),
+            partition,
             entries: f.entries_per_bucket(),
             active: true,
         });
@@ -114,7 +111,7 @@ mod tests {
     }
 
     #[test]
-    fn query_index() {
+    fn query_index() -> anyhow::Result<()> {
         // let partitions = &tests::create_test_data(10, (5, 17), SEED)[9..];
         let partitions = &tests::create_test_data(100, (999, 4999), SEED);
         let mut index: CuckooIndex<TestPartition> = CuckooIndex::new(800);
@@ -123,7 +120,7 @@ mod tests {
         for p in partitions {
             if let Some(first_val) = tests::create_partition_data(&p).next() {
                 assert!(
-                    index.query(first_val).contains(&p),
+                    index.query(first_val)?.contains(&p),
                     "querying partitions for '{}' does not yield expected {:?}",
                     first_val,
                     &p.id
@@ -132,21 +129,23 @@ mod tests {
                 panic!("could not create value for partition");
             }
         }
+        Ok(())
     }
 
     #[test]
-    fn dont_yield_removed_partitions() {
+    fn dont_yield_removed_partitions() -> anyhow::Result<()> {
         let partitions = &tests::create_test_data(10, (99, 499), SEED);
         let mut index: CuckooIndex<TestPartition> = CuckooIndex::new(80);
         tests::fill_index(&mut index, &partitions);
         index.remove(&partitions[3]);
-        if let Some(first_val)  = tests::create_partition_data(&partitions[3]).next() {
+        if let Some(first_val) = tests::create_partition_data(&partitions[3]).next() {
             assert!(
-                !index.query(first_val).contains(&partitions[3]),
+                !index.query(first_val)?.contains(&partitions[3]),
                 "querying partitions for '{}' should not yield deleted partition {:?}",
                 first_val,
                 &partitions[3].id
             );
         }
+        Ok(())
     }
 }

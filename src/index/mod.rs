@@ -1,4 +1,5 @@
 pub mod in_memory;
+pub mod poc;
 
 /// The underlying assumption here is that we're indexing "partitions"
 /// on an unknown stream of data. The only representation we can retrieve
@@ -34,23 +35,19 @@ pub mod in_memory;
 /// A trait that allows querying a data set for matching partitions.
 /// TODO: P should probably be somehow serializable
 pub trait PartitionFilter<P>
-where
-    P: Clone,
 {
     /// Query matching partitions for a given value
     /// TODO: what's the result type here? It's either the partition, or
     /// some kind of partition ID.
-    fn query(self: &Self, value: u64) -> Vec<P>;
+    fn query(self: &Self, value: u64) -> anyhow::Result<Vec<P>>;
 }
 
 pub trait PartitionIndex<P>
-where
-    P: Clone,
 {
     /// Add a partition to the index.
     /// @param values an iterator of the values stored in the partition
     /// @param partition the partition identifier to associate the values with
-    fn add(self: &mut Self, values: impl Iterator<Item = u64>, partition: &P);
+    fn add(self: &mut Self, values: impl Iterator<Item = u64>, partition: P);
 
     /// Remove a partition from the index.
     /// @param partition to remove
@@ -64,7 +61,7 @@ pub mod tests {
 
     use super::PartitionIndex;
 
-    #[derive(Clone, PartialEq, Eq)]
+    #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
     pub struct TestPartition {
         pub id: usize, // counting upwards from zero, the simplest possible ID
         pub size: u32,
@@ -73,7 +70,7 @@ pub mod tests {
 
     pub fn fill_index(index: &mut impl PartitionIndex<TestPartition>, ps: &[TestPartition]) {
         for partition in ps {
-            index.add(create_partition_data(&partition), partition);
+            index.add(create_partition_data(&partition), partition.clone());
         }
     }
 
