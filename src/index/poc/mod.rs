@@ -82,7 +82,6 @@ where
             .read(true)
             .write(false)
             .open(&data_root.join(format!("{:07}.bucket", bucket)))?;
-        eprintln!("tp;load_bucket from {:?}", file);
         let bucket = bincode::deserialize_from(file)?;
         Ok(bucket)
     }
@@ -100,10 +99,6 @@ where
         let b2_data = self.load_bucket(&data_root, bucket2)?;
         let mut pos = 0;
         let mut result = vec![];
-        eprintln!(
-            "tp;query_disk({}): {}@[{}, {}]",
-            key, fingerprint, bucket1, bucket2
-        );
         for p in &self.data.partitions {
             if p.active {
                 for l in 0..p.entries {
@@ -251,6 +246,36 @@ mod tests {
         let index_from_disk: PersistentIndex<TestPartition> =
             PersistentIndex::try_load_from_disk(storage_root.to_str().unwrap().to_string())?;
         drop(index);
+        for p in partitions {
+            if let Some(first_val) = tests::create_partition_data(&p).next() {
+                assert!(
+                    index_from_disk.query(first_val)?.contains(&p),
+                    "querying partitions for '{}' does not yield expected {:?}",
+                    first_val,
+                    &p.id
+                );
+            } else {
+                panic!("could not create value for partition");
+            }
+        }
+        Ok(())
+    }
+
+    // serve queries from a mixed of persisted and in-memory partitions
+    #[test]
+    fn serve_queries_mixed() -> anyhow::Result<()> {
+        let partitions = &tests::create_test_data(10, (99, 499), SEED);
+        let (first_half, second_half) = partitions.split_at(5);
+        let storage_root = std::env::temp_dir();
+        let mut index: PersistentIndex<TestPartition> =
+            PersistentIndex::try_new(80, storage_root.to_str().unwrap().to_string())?;
+        tests::fill_index(&mut index, first_half);
+        index.persist()?;
+        drop(index);
+        let mut index_from_disk: PersistentIndex<TestPartition> =
+            PersistentIndex::try_load_from_disk(storage_root.to_str().unwrap().to_string())?;
+        tests::fill_index(&mut index_from_disk, second_half);
+        // reload from disk and run query tests
         for p in partitions {
             if let Some(first_val) = tests::create_partition_data(&p).next() {
                 assert!(

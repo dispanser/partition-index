@@ -34,10 +34,6 @@ where
         let fingerprint = fingerprint(key);
         let bucket1 = bucket(key, self.buckets.len() as u64);
         let bucket2 = flip_bucket(fingerprint, bucket1, self.buckets.len() as u64) as usize;
-        eprintln!(
-            "tp;query_mem({}): {}@[{}, {}]",
-            key, fingerprint, bucket1, bucket2
-        );
         let mut pos = 0;
         let mut result = vec![];
         for p in &self.partitions {
