@@ -39,7 +39,7 @@ pub trait PartitionFilter<P>
     /// Query matching partitions for a given value
     /// TODO: what's the result type here? It's either the partition, or
     /// some kind of partition ID.
-    fn query(self: &Self, value: u64) -> anyhow::Result<Vec<P>>;
+    fn query(&self, value: u64) -> anyhow::Result<Vec<P>>;
 }
 
 pub trait PartitionIndex<P>
@@ -47,11 +47,11 @@ pub trait PartitionIndex<P>
     /// Add a partition to the index.
     /// @param values an iterator of the values stored in the partition
     /// @param partition the partition identifier to associate the values with
-    fn add(self: &mut Self, values: impl Iterator<Item = u64>, partition: P);
+    fn add(&mut self, values: impl Iterator<Item = u64>, partition: P);
 
     /// Remove a partition from the index.
     /// @param partition to remove
-    fn remove(self: &mut Self, partition: &P);
+    fn remove(&mut self, partition: &P);
 }
 
 #[cfg(test)]

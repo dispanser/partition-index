@@ -10,9 +10,9 @@ pub enum InsertResult {
 
 /// Basic Filter trait, not constrained to bloom filters
 pub trait Filter {
-    fn insert(self: &mut Self, key: u64) -> InsertResult;
+    fn insert(&mut self, key: u64) -> InsertResult;
 
-    fn contains(self: &Self, key: u64) -> bool;
+    fn contains(&self, key: u64) -> bool;
 }
 
 #[cfg(test)]

@@ -28,7 +28,7 @@ impl CuckooFilter {
         }
     }
 
-    fn try_insert(self: &mut Self, fingerprint: u16, bucket: u64, tries_left: u8) -> InsertResult {
+    fn try_insert(&mut self, fingerprint: u16, bucket: u64, tries_left: u8) -> InsertResult {
         assert!(bucket < self.buckets, "{} < {}", bucket, self.buckets);
         let start_slot = (bucket * self.entries_per_bucket) as usize;
         for b in start_slot..(start_slot + self.entries_per_bucket as usize) {
@@ -62,7 +62,7 @@ impl CuckooFilter {
         }
     }
 
-    fn find_in_bucket(self: &Self, fingerprint: u16, bucket: u64) -> bool {
+    fn find_in_bucket(&self, fingerprint: u16, bucket: u64) -> bool {
         assert!(bucket < self.buckets);
         let start_slot = (bucket * self.entries_per_bucket) as usize;
         for b in start_slot..(start_slot + self.entries_per_bucket as usize) {
@@ -89,7 +89,7 @@ pub fn flip_bucket(fingerprint: u16, bucket: u64, buckets: u64) -> u64 {
 }
 
 impl Filter for CuckooFilter {
-    fn insert(self: &mut Self, key: u64) -> InsertResult {
+    fn insert(&mut self, key: u64) -> InsertResult {
         let fingerprint = fingerprint(key);
         let bucket = bucket(key, self.buckets);
         let other = flip_bucket(fingerprint, bucket, self.buckets);
@@ -102,7 +102,7 @@ impl Filter for CuckooFilter {
         }
     }
 
-    fn contains(self: &Self, key: u64) -> bool {
+    fn contains(&self, key: u64) -> bool {
         let fingerprint = fingerprint(key);
         let bucket = bucket(key, self.buckets);
         let alt = flip_bucket(fingerprint, bucket, self.buckets);

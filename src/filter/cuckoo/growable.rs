@@ -21,23 +21,23 @@ impl GrowableCuckooFilter {
         }
     }
 
-    pub fn entries_per_bucket(self: &Self) -> usize {
+    pub fn entries_per_bucket(&self) -> usize {
         self.entries_per_bucket
     }
 
-    pub fn items(self: &Self) -> u64 {
+    pub fn items(&self) -> u64 {
         self.items
     }
 
-    pub fn num_buckets(self: &Self) -> u64 {
+    pub fn num_buckets(&self) -> u64 {
         self.buckets
     }
 
-    pub fn drain(self: Self) -> Vec<Vec<u16>> {
+    pub fn drain(self) -> Vec<Vec<u16>> {
         self.data
     }
 
-    fn try_insert(self: &mut Self, fingerprint: u16, bucket: u64, tries_left: u8) -> InsertResult {
+    fn try_insert(&mut self, fingerprint: u16, bucket: u64, tries_left: u8) -> InsertResult {
         assert!(bucket < self.buckets);
         let entries = &mut self.data[bucket as usize];
 
@@ -69,7 +69,7 @@ impl GrowableCuckooFilter {
         )
     }
 
-    fn find_in_bucket(self: &Self, fingerprint: u16, bucket: u64) -> bool {
+    fn find_in_bucket(&self, fingerprint: u16, bucket: u64) -> bool {
         for entry in &self.data[bucket as usize] {
             if *entry == fingerprint {
                 return true;
@@ -80,7 +80,7 @@ impl GrowableCuckooFilter {
 }
 
 impl Filter for GrowableCuckooFilter {
-    fn insert(self: &mut Self, key: u64) -> InsertResult {
+    fn insert(&mut self, key: u64) -> InsertResult {
         let fingerprint = fingerprint(key);
         let bucket = bucket(key, self.buckets);
         let other = flip_bucket(fingerprint, bucket, self.buckets);
@@ -93,7 +93,7 @@ impl Filter for GrowableCuckooFilter {
         }
     }
 
-    fn contains(self: &Self, key: u64) -> bool {
+    fn contains(&self, key: u64) -> bool {
         let fingerprint = fingerprint(key);
         let bucket = bucket(key, self.buckets);
         let alt = flip_bucket(fingerprint, bucket, self.buckets);

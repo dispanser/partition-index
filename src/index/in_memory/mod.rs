@@ -30,7 +30,7 @@ impl<P> PartitionFilter<P> for CuckooIndex<P>
 where
     P: Clone,
 {
-    fn query(self: &Self, key: u64) -> anyhow::Result<Vec<P>> {
+    fn query(&self, key: u64) -> anyhow::Result<Vec<P>> {
         let fingerprint = fingerprint(key);
         let bucket1 = bucket(key, self.buckets.len() as u64);
         let bucket2 = flip_bucket(fingerprint, bucket1, self.buckets.len() as u64) as usize;
@@ -56,7 +56,7 @@ impl<P> PartitionIndex<P> for CuckooIndex<P>
 where
     P: PartialEq,
 {
-    fn add(self: &mut Self, values: impl Iterator<Item = u64>, partition: P) {
+    fn add(&mut self, values: impl Iterator<Item = u64>, partition: P) {
         let mut f = growable::GrowableCuckooFilter::new(self.buckets.len() as u64);
         for v in values.into_iter() {
             f.insert(v);
@@ -76,7 +76,7 @@ where
         }
     }
 
-    fn remove(self: &mut Self, to_be_removed: &P) {
+    fn remove(&mut self, to_be_removed: &P) {
         for p in self.partitions.iter_mut() {
             if &p.partition == to_be_removed {
                 p.active = false;

@@ -4,7 +4,12 @@ use crate::{
 };
 
 use super::in_memory::{CuckooIndex, PartitionInfo};
-use std::{fs, path::PathBuf, str::FromStr};
+use std::{
+    fs,
+    io::{Read, Write},
+    path::PathBuf,
+    str::FromStr,
+};
 
 #[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistentIndexData<P> {
@@ -54,16 +59,16 @@ where
         })
     }
 
-    pub fn persist(self: &mut Self) -> anyhow::Result<()> {
+    pub fn persist(&mut self) -> anyhow::Result<()> {
         let data_root: PathBuf = [&self.storage_root, "index"].iter().collect();
         fs::create_dir_all(&data_root)?;
         for (idx, bucket) in self.mem_index.buckets.iter().enumerate() {
-            let file = fs::OpenOptions::new()
+            let mut file = fs::OpenOptions::new()
                 .read(false)
-                .write(true)
                 .create(true)
+                .append(true)
                 .open(&data_root.join(format!("{:07}.bucket", idx)))?;
-            bincode::serialize_into(file, bucket)?;
+            file.write_all(to_u8_slice(bucket))?;
         }
         self.data.partitions.append(&mut self.mem_index.partitions);
         self.data.slots = self.mem_index.slots;
@@ -77,32 +82,41 @@ where
         Ok(())
     }
 
-    fn load_bucket(self: &Self, data_root: &PathBuf, bucket: u64) -> anyhow::Result<Vec<u16>> {
-        let file = fs::OpenOptions::new()
+    fn load_bucket(
+        &self,
+        data_root: &PathBuf,
+        bucket: u64,
+        buf: &mut Vec<u8>,
+    ) -> anyhow::Result<()> {
+        let mut file = fs::OpenOptions::new()
             .read(true)
             .write(false)
             .open(&data_root.join(format!("{:07}.bucket", bucket)))?;
-        let bucket = bincode::deserialize_from(file)?;
-        Ok(bucket)
+        file.read_to_end(buf)?;
+        // let bucket = bincode::deserialize_from(file)?;
+        Ok(())
     }
 
-    fn query_disk(self: &Self, key: u64) -> anyhow::Result<Vec<P>> {
+    fn query_disk(&self, key: u64) -> anyhow::Result<Vec<P>> {
         if self.data.partitions.is_empty() {
-            eprintln!("tp;query_disk: no persisted partition data, short-circuiting");
             return Ok(vec![]);
         }
         let fingerprint = fingerprint(key);
         let bucket1 = bucket(key, self.data.num_buckets as u64);
         let bucket2 = flip_bucket(fingerprint, bucket1, self.data.num_buckets as u64);
         let data_root: PathBuf = [&self.storage_root, "index"].iter().collect();
-        let b1_data = self.load_bucket(&data_root, bucket1)?;
-        let b2_data = self.load_bucket(&data_root, bucket2)?;
+        let mut b1_data = vec![];
+        let mut b2_data = vec![];
+        self.load_bucket(&data_root, bucket1, &mut b1_data)?;
+        self.load_bucket(&data_root, bucket2, &mut b2_data)?;
+        let b1_data_u16 = to_u16_slice(&b1_data);
+        let b2_data_u16 = to_u16_slice(&b2_data);
         let mut pos = 0;
         let mut result = vec![];
         for p in &self.data.partitions {
             if p.active {
                 for l in 0..p.entries {
-                    if b1_data[pos + l] == fingerprint || b2_data[pos + l] == fingerprint {
+                    if b1_data_u16[pos + l] == fingerprint || b2_data_u16[pos + l] == fingerprint {
                         result.push(p.partition.clone());
                     }
                 }
@@ -113,11 +127,21 @@ where
     }
 }
 
+fn to_u8_slice(slice: &[u16]) -> &[u8] {
+    let num_elems = 2 * slice.len();
+    unsafe { std::slice::from_raw_parts(slice.as_ptr().cast::<u8>(), num_elems) }
+}
+
+fn to_u16_slice(slice: &[u8]) -> &[u16] {
+    let num_elems = slice.len() / 2;
+    unsafe { std::slice::from_raw_parts(slice.as_ptr().cast::<u16>(), num_elems) }
+}
+
 impl<P> PartitionFilter<P> for PersistentIndex<P>
 where
     P: Clone + serde::Serialize + for<'de> serde::Deserialize<'de>,
 {
-    fn query(self: &Self, key: u64) -> anyhow::Result<Vec<P>> {
+    fn query(&self, key: u64) -> anyhow::Result<Vec<P>> {
         let mut disk_results = self.query_disk(key)?;
         let mut mem_results = self.mem_index.query(key)?;
         disk_results.append(&mut mem_results);
@@ -129,18 +153,17 @@ impl<P> PartitionIndex<P> for PersistentIndex<P>
 where
     P: PartialEq,
 {
-    fn add(self: &mut Self, values: impl Iterator<Item = u64>, partition: P) {
+    fn add(&mut self, values: impl Iterator<Item = u64>, partition: P) {
         self.mem_index.add(values, partition)
     }
 
-    fn remove(self: &mut Self, to_be_removed: &P) {
+    fn remove(&mut self, to_be_removed: &P) {
         self.mem_index.remove(to_be_removed)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
     use std::{os::linux::fs::MetadataExt, path::PathBuf};
 
     use super::PersistentIndex;
@@ -192,17 +215,16 @@ mod tests {
         Ok(())
     }
 
-    #[ignore = "format changed, bucket size no longer stable"]
     #[test]
     fn verify_persisted_bucket_sizes() -> anyhow::Result<()> {
         let partitions = &tests::create_test_data(10, (99, 499), SEED);
-        let storage_root = std::env::temp_dir();
+        let temp_dir = tempfile::tempdir()?;
+        let storage_root = temp_dir.path();
         let mut index: PersistentIndex<TestPartition> =
             PersistentIndex::try_new(80, storage_root.to_str().unwrap().to_string())?;
         tests::fill_index(&mut index, &partitions);
+        let expected_file_length = 2 * index.mem_index.slots;
         index.persist()?;
-
-        let expecetd_file_length = 2 * index.mem_index.slots + 8;
         let data_root: PathBuf = storage_root.join("index");
         for f in data_root.read_dir()? {
             let f = f?;
@@ -210,10 +232,10 @@ mod tests {
             assert!(metadata.is_file(), "index should only contain files");
             assert_eq!(
                 metadata.st_size(),
-                expecetd_file_length as u64,
+                expected_file_length as u64,
                 "index file '{:?}' must have length {}",
                 f.file_name(),
-                expecetd_file_length
+                expected_file_length,
             );
         }
         Ok(())
@@ -222,7 +244,8 @@ mod tests {
     #[test]
     fn deserialize_persisted_state() -> anyhow::Result<()> {
         let partitions = &tests::create_test_data(10, (99, 499), SEED);
-        let storage_root = std::env::temp_dir();
+        let temp_dir = tempfile::tempdir()?;
+        let storage_root = temp_dir.path();
         let mut index: PersistentIndex<TestPartition> =
             PersistentIndex::try_new(80, storage_root.to_str().unwrap().to_string())?;
         tests::fill_index(&mut index, &partitions);
@@ -236,10 +259,11 @@ mod tests {
 
     #[test]
     fn serve_queries_from_disk() -> anyhow::Result<()> {
-        let partitions = &tests::create_test_data(10, (99, 499), SEED);
-        let storage_root = PathBuf::from_str("/tmp/partition_index")?;
+        let partitions = &tests::create_test_data(3, (10, 20), SEED);
+        let temp_dir = tempfile::tempdir()?;
+        let storage_root = temp_dir.path();
         let mut index: PersistentIndex<TestPartition> =
-            PersistentIndex::try_new(80, storage_root.to_str().unwrap().to_string())?;
+            PersistentIndex::try_new(8, storage_root.to_str().unwrap().to_string())?;
         tests::fill_index(&mut index, &partitions);
         index.persist()?;
         // reload from disk and run query tests
@@ -264,11 +288,12 @@ mod tests {
     // serve queries from a mixed of persisted and in-memory partitions
     #[test]
     fn serve_queries_mixed() -> anyhow::Result<()> {
-        let partitions = &tests::create_test_data(10, (99, 499), SEED);
-        let (first_half, second_half) = partitions.split_at(5);
-        let storage_root = std::env::temp_dir();
+        let partitions = &tests::create_test_data(3, (10, 20), SEED);
+        let (first_half, second_half) = partitions.split_at(2);
+        let temp_dir = tempfile::tempdir()?;
+        let storage_root = temp_dir.path();
         let mut index: PersistentIndex<TestPartition> =
-            PersistentIndex::try_new(80, storage_root.to_str().unwrap().to_string())?;
+            PersistentIndex::try_new(8, storage_root.to_str().unwrap().to_string())?;
         tests::fill_index(&mut index, first_half);
         index.persist()?;
         drop(index);
@@ -280,6 +305,33 @@ mod tests {
             if let Some(first_val) = tests::create_partition_data(&p).next() {
                 assert!(
                     index_from_disk.query(first_val)?.contains(&p),
+                    "querying partitions for '{}' does not yield expected {:?}",
+                    first_val,
+                    &p.id
+                );
+            } else {
+                panic!("could not create value for partition");
+            }
+        }
+        Ok(())
+    }
+
+    // serve queries from a mixed of persisted and in-memory partitions
+    #[test]
+    fn serve_queries_multiple_persist() -> anyhow::Result<()> {
+        let partitions = &tests::create_test_data(10, (99, 499), SEED);
+        let temp_dir = tempfile::tempdir()?;
+        let storage_root = temp_dir.path().to_str().unwrap();
+        let mut index = PersistentIndex::try_new(80, storage_root.to_string())?;
+        for p in partitions {
+            index.add(tests::create_partition_data(&p), p.clone());
+            index.persist()?;
+            index = PersistentIndex::try_load_from_disk(storage_root.to_string())?;
+        }
+        for p in partitions {
+            if let Some(first_val) = tests::create_partition_data(&p).next() {
+                assert!(
+                    index.query(first_val)?.contains(&p),
                     "querying partitions for '{}' does not yield expected {:?}",
                     first_val,
                     &p.id
