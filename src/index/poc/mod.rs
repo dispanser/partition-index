@@ -82,6 +82,17 @@ where
         Ok(())
     }
 
+    pub fn estimate_size(&self) -> usize {
+        self.mem_index.partitions.len() * std::mem::size_of::<P>()
+            + self.data.partitions.len() * std::mem::size_of::<P>()
+            + self.mem_index.slots * self.data.num_buckets as usize * std::mem::size_of::<u16>()
+    }
+
+    pub fn estimate_disk_size(&self) -> usize {
+        self.data.partitions.len() * std::mem::size_of::<P>()
+            + self.data.slots * self.data.num_buckets as usize * std::mem::size_of::<u16>()
+    }
+
     fn load_bucket(
         &self,
         data_root: &PathBuf,

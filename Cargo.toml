@@ -16,10 +16,8 @@ serde = { version = "1.0.152", features = ["derive"] }
 [lib]
 bench = false
 
-[[bin]]
-bench = false
-name = "main"
-path = "src/main.rs"
+# [[bin]]
+# bench = false
 
 [dev-dependencies]
 criterion = "0.4.0"
