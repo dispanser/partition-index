@@ -48,10 +48,8 @@ fn main() -> anyhow::Result<()> {
         }
     }
     index.persist()?;
-    let done = SystemTime::now();
-
+    let insert_duration = start_indexing.elapsed()?;
     let index_size = num_partitions * partition_size;
-    let insert_duration = done.duration_since(start_indexing)?;
     eprintln!(
         "tp;bench01: inserted {} elems in {:?} ({:?} ops)",
         index_size,

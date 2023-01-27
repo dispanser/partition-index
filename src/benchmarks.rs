@@ -8,6 +8,6 @@ pub struct BenchmarkPartition {
 
 impl BenchmarkPartition {
     pub fn elements(&self) -> u64 {
-        self.start * self.length
+        self.length
     }
 }

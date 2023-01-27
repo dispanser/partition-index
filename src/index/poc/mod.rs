@@ -93,6 +93,15 @@ where
             + self.data.slots * self.data.num_buckets as usize * std::mem::size_of::<u16>()
     }
 
+    pub fn partitions(&self) -> impl Iterator<Item = P> + '_ {
+        self.data.partitions.iter().chain(self.mem_index.partitions.iter())
+            .map(|pi| pi.partition.clone())
+    }
+
+    pub fn num_partitions(&self) -> usize {
+        self.data.partitions.len() + self.mem_index.partitions.len()
+    }
+
     fn load_bucket(
         &self,
         data_root: &PathBuf,
