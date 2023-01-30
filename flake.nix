@@ -29,6 +29,7 @@
           buildInputs = with pkgs; [
             protobuf
             cargo-watch
+            cargo-flamegraph
             rust-analyzer
             rustfmt
             clippy
