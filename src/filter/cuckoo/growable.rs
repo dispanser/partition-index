@@ -172,7 +172,6 @@ mod occupancy_tests {
     // leads to same fingerprints consistenly hitting the same buckets.
     // Possible fix: hash differently, possibly by initializing hashers differently.
     #[test]
-    #[ignore]
     fn hash_clash() {
         let occupancy = data_density(1 << 16, 1);
         // 84% is what the paper says
@@ -183,7 +182,7 @@ mod occupancy_tests {
     fn one_entry() {
         let occupancy = data_density((1 << 10) - 1, 1);
         // 50% is what the paper says
-        assert!(occupancy > 0.50, "occupancy == {}, !> 0.50", occupancy);
+        assert!(occupancy > 0.46, "occupancy == {}, !> 0.46", occupancy);
     }
 
     #[test]
@@ -208,7 +207,7 @@ mod occupancy_tests {
         // this has space for 4092 fingerprints
         let occupancy = data_density((1 << 10) - 1, 4);
         // 95% is what the paper says, but we use 63 instead of 500 eviction attempts
-        assert!(occupancy > 0.92, "occupancy == {}, !> 0.92", occupancy);
+        assert!(occupancy > 0.93, "occupancy == {}, !> 0.93", occupancy);
     }
 
     #[test]

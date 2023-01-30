@@ -32,7 +32,6 @@ fn main() -> anyhow::Result<()> {
             false_positives += query_result.len() as u64;
             false_negatives += 1;
         }
-        // eprintln!("tp;matches {} -> {:#?}", value, query_result);
     }
     index.persist()?;
     let query_duration = start_querying.elapsed()?;

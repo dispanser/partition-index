@@ -2,7 +2,8 @@ pub mod growable;
 
 use crate::filter::Filter;
 use rand::Rng;
-use std::{collections::hash_map::DefaultHasher, hash::Hasher};
+use siphasher::sip::SipHasher13;
+use std::hash::Hasher;
 
 use super::InsertResult;
 
@@ -74,18 +75,39 @@ impl CuckooFilter {
     }
 }
 
+#[inline]
+/// Create a 16-bit fingerprint for the given key_rot
+/// 0 is an invalid fingerprint as it demarks an empty entry, so another
+/// round of hashing is done until a valid fingerprint is created.
+/// Valid fingerprints have a range of [1, 65536)
+pub fn fingerprint(key: u64) -> u16 {
+    let mut hasher = SipHasher13::new_with_keys(329, 4242432435);
+    let mut key_rot = key;
+    loop {
+        hasher.write_u64(key_rot);
+        key_rot = hasher.finish();
+        if key_rot & 0xFFFF != 0 {
+            break;
+        }
+    }
+    (key_rot & 0xFFFF) as u16
+}
+
 pub fn bucket(key: u64, buckets: u64) -> u64 {
-    // let fp_hash = hash(fingerprint.into()) % buckets;
-    // TODO: can we make this do without all the xor?
-    // using the all-new "fp_hash - b" approach should obsolete that computation
-    // ((hash(key) % buckets) ^ fp_hash) % buckets
-    hash(key) % buckets
+    hash_u64(key) % buckets
 }
 
 pub fn flip_bucket(fingerprint: u16, bucket: u64, buckets: u64) -> u64 {
     assert!(bucket < buckets, "bucket {} >= max of {}", bucket, buckets);
-    let fp_hash = hash(fingerprint.into());
+    let fp_hash = hash_u64(fingerprint.into());
     fp_hash.wrapping_sub(bucket) % buckets
+}
+
+#[inline]
+fn hash_u64(key: u64) -> u64 {
+    let mut hasher = SipHasher13::new();
+    hasher.write_u64(key);
+    hasher.finish()
 }
 
 impl Filter for CuckooFilter {
@@ -108,31 +130,6 @@ impl Filter for CuckooFilter {
         let alt = flip_bucket(fingerprint, bucket, self.buckets);
         self.find_in_bucket(fingerprint, bucket) || self.find_in_bucket(fingerprint, alt)
     }
-}
-
-#[inline]
-pub fn hash(key: u64) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    hasher.write_u64(key);
-    hasher.finish()
-}
-
-#[inline]
-/// Create a 16-bit fingerprint for the given key_rot
-/// 0 is an invalid fingerprint as it demarks an empty entry, so another
-/// round of hashing is done until a valid fingerprint is created.
-/// Valid fingerprints have a range of [1, 65536)
-pub fn fingerprint(key: u64) -> u16 {
-    let mut hasher = DefaultHasher::new();
-    let mut key_rot = key;
-    loop {
-        hasher.write_u64(key_rot);
-        key_rot = hasher.finish();
-        if key_rot & 0xFFFF != 0 {
-            break;
-        }
-    }
-    (key_rot & 0xFFFF) as u16
 }
 
 #[cfg(test)]

@@ -113,7 +113,6 @@ where
             .write(false)
             .open(&data_root.join(format!("{:07}.bucket", bucket)))?;
         file.read_to_end(buf)?;
-        // let bucket = bincode::deserialize_from(file)?;
         Ok(())
     }
 
