@@ -23,6 +23,7 @@ pub struct PersistentIndex<P> {
     storage_root: String,
     data: PersistentIndexData<P>,
     mem_index: CuckooIndex<P>,
+    data_root: PathBuf,
 }
 
 impl<P> PersistentIndex<P>
@@ -30,6 +31,7 @@ where
     P: Clone + serde::Serialize + for<'de> serde::Deserialize<'de>,
 {
     pub fn try_new(buckets: u64, storage_root: String) -> anyhow::Result<Self> {
+        let data_root: PathBuf = [&storage_root, "index"].iter().collect();
         Ok(Self {
             storage_root,
             data: PersistentIndexData {
@@ -38,6 +40,7 @@ where
                 partitions: vec![],
             },
             mem_index: CuckooIndex::new(buckets),
+            data_root,
         })
     }
 
@@ -52,22 +55,23 @@ where
             .open(PathBuf::from_str(&storage_root)?.join("partitions.data"))?;
         let data: PersistentIndexData<P> = bincode::deserialize_from(file)?;
         let num_buckets = data.num_buckets;
+        let data_root: PathBuf = [&storage_root, "index"].iter().collect();
         Ok(Self {
             storage_root,
             data,
             mem_index: CuckooIndex::new(num_buckets),
+            data_root,
         })
     }
 
     pub fn persist(&mut self) -> anyhow::Result<()> {
-        let data_root: PathBuf = [&self.storage_root, "index"].iter().collect();
-        fs::create_dir_all(&data_root)?;
+        fs::create_dir_all(&self.data_root)?;
         for (idx, bucket) in self.mem_index.buckets.iter().enumerate() {
             let mut file = fs::OpenOptions::new()
                 .read(false)
                 .create(true)
                 .append(true)
-                .open(&data_root.join(format!("{:07}.bucket", idx)))?;
+                .open(&self.data_root.join(format!("{:07}.bucket", idx)))?;
             file.write_all(to_u8_slice(bucket))?;
         }
         self.data.partitions.append(&mut self.mem_index.partitions);
@@ -94,7 +98,10 @@ where
     }
 
     pub fn partitions(&self) -> impl Iterator<Item = P> + '_ {
-        self.data.partitions.iter().chain(self.mem_index.partitions.iter())
+        self.data
+            .partitions
+            .iter()
+            .chain(self.mem_index.partitions.iter())
             .map(|pi| pi.partition.clone())
     }
 
@@ -102,16 +109,11 @@ where
         self.data.partitions.len() + self.mem_index.partitions.len()
     }
 
-    fn load_bucket(
-        &self,
-        data_root: &PathBuf,
-        bucket: u64,
-        buf: &mut Vec<u8>,
-    ) -> anyhow::Result<()> {
+    fn load_bucket(&self, bucket: u64, buf: &mut Vec<u8>) -> anyhow::Result<()> {
         let mut file = fs::OpenOptions::new()
             .read(true)
             .write(false)
-            .open(&data_root.join(format!("{:07}.bucket", bucket)))?;
+            .open(&self.data_root.join(format!("{:07}.bucket", bucket)))?;
         file.read_to_end(buf)?;
         Ok(())
     }
@@ -123,11 +125,10 @@ where
         let fingerprint = fingerprint(key);
         let bucket1 = bucket(key, self.data.num_buckets as u64);
         let bucket2 = flip_bucket(fingerprint, bucket1, self.data.num_buckets as u64);
-        let data_root: PathBuf = [&self.storage_root, "index"].iter().collect();
         let mut b1_data = vec![];
         let mut b2_data = vec![];
-        self.load_bucket(&data_root, bucket1, &mut b1_data)?;
-        self.load_bucket(&data_root, bucket2, &mut b2_data)?;
+        self.load_bucket(bucket1, &mut b1_data)?;
+        self.load_bucket(bucket2, &mut b2_data)?;
         let b1_data_u16 = to_u16_slice(&b1_data);
         let b2_data_u16 = to_u16_slice(&b2_data);
         let mut pos = 0;
