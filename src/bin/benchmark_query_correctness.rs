@@ -10,7 +10,7 @@ fn main() -> anyhow::Result<()> {
     let file_path = &args[1];
     let num_queries: u64 = args[2].parse()?;
 
-    let mut index =
+    let index =
         PersistentIndex::<BenchmarkPartition>::try_load_from_disk(file_path.to_string())?;
     let p0 = index.partitions().next().expect("invalid: empty index");
     let max_value = p0.elements() * index.num_partitions() as u64;
@@ -33,7 +33,6 @@ fn main() -> anyhow::Result<()> {
             false_negatives += 1;
         }
     }
-    index.persist()?;
     let query_duration = start_querying.elapsed()?;
     let fp_rate =
         false_positives as f64 / (num_queries as u128 * index.num_partitions() as u128) as f64;
