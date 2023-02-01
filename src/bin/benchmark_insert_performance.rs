@@ -39,10 +39,10 @@ fn main() -> anyhow::Result<()> {
     let start_indexing = SystemTime::now();
     for p in partitions {
         index_partition(&mut index, p);
-        if index.estimate_size() > (1 << 27) {
+        if index.estimate_mem_size() > (1 << 27) {
             eprintln!(
                 "tp;bench01::persist: {} bytes in memory",
-                index.estimate_size()
+                index.estimate_mem_size()
             );
             index.persist()?;
         }

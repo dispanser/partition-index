@@ -75,21 +75,30 @@ where
             file.write_all(to_u8_slice(bucket))?;
         }
         self.data.partitions.append(&mut self.mem_index.partitions);
-        self.data.slots = self.mem_index.slots;
-        self.mem_index = CuckooIndex::new(self.data.num_buckets);
+        self.data.slots += self.mem_index.slots;
         let file = fs::OpenOptions::new()
             .read(false)
             .write(true)
             .create(true)
             .open(PathBuf::from_str(&self.storage_root)?.join("partitions.data"))?;
         bincode::serialize_into(file, &self.data)?;
+        eprintln!(
+            "tp;persist: {} slots over {} in {} ms",
+            self.mem_index.slots,
+            self.data.num_buckets,
+            start.elapsed()?.as_millis(),
+        );
+        self.mem_index = CuckooIndex::new(self.data.num_buckets);
+
         Ok(())
     }
 
-    pub fn estimate_size(&self) -> usize {
-        self.mem_index.partitions.len() * std::mem::size_of::<P>()
-            + self.data.partitions.len() * std::mem::size_of::<P>()
-            + self.mem_index.slots * self.data.num_buckets as usize * std::mem::size_of::<u16>()
+    pub fn estimate_mem_size(&self) -> usize {
+        self.mem_index.partitions.capacity() * std::mem::size_of::<P>()
+            + self.data.partitions.capacity() * std::mem::size_of::<P>()
+            + self.mem_index.buckets.capacity()
+                * self.data.num_buckets as usize
+                * std::mem::size_of::<u16>()
     }
 
     pub fn estimate_disk_size(&self) -> usize {
