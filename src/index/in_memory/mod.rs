@@ -1,6 +1,7 @@
 use crate::filter::cuckoo::{bucket, fingerprint, flip_bucket, growable};
 use crate::filter::Filter;
 use crate::index::{PartitionFilter, PartitionIndex};
+use async_trait::async_trait;
 
 #[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PartitionInfo<P> {
@@ -26,11 +27,12 @@ impl<P> CuckooIndex<P> {
     }
 }
 
+#[async_trait]
 impl<P> PartitionFilter<P> for CuckooIndex<P>
 where
-    P: Clone,
+    P: Clone + std::marker::Sync,
 {
-    fn query(&self, key: u64) -> anyhow::Result<Vec<P>> {
+    async fn query(&self, key: u64) -> anyhow::Result<Vec<P>> {
         let fingerprint = fingerprint(key);
         let bucket1 = bucket(key, self.buckets.len() as u64);
         let bucket2 = flip_bucket(fingerprint, bucket1, self.buckets.len() as u64) as usize;
@@ -95,8 +97,8 @@ mod tests {
 
     static SEED: u64 = 1337;
 
-    #[test]
-    fn fill_index() {
+    #[tokio::test]
+    async fn fill_index() {
         let partitions = tests::create_test_data(100, (1000, 10000), SEED);
         let mut index: CuckooIndex<TestPartition> = CuckooIndex::new(2500);
         tests::fill_index(&mut index, &partitions);
@@ -106,8 +108,8 @@ mod tests {
         });
     }
 
-    #[test]
-    fn query_index() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn query_index() -> anyhow::Result<()> {
         // let partitions = &tests::create_test_data(10, (5, 17), SEED)[9..];
         let partitions = &tests::create_test_data(100, (999, 4999), SEED);
         let mut index: CuckooIndex<TestPartition> = CuckooIndex::new(800);
@@ -116,7 +118,7 @@ mod tests {
         for p in partitions {
             if let Some(first_val) = tests::create_partition_data(&p).next() {
                 assert!(
-                    index.query(first_val)?.contains(&p),
+                    index.query(first_val).await?.contains(&p),
                     "querying partitions for '{}' does not yield expected {:?}",
                     first_val,
                     &p.id
@@ -128,15 +130,15 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn dont_yield_removed_partitions() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn dont_yield_removed_partitions() -> anyhow::Result<()> {
         let partitions = &tests::create_test_data(10, (99, 499), SEED);
         let mut index: CuckooIndex<TestPartition> = CuckooIndex::new(80);
         tests::fill_index(&mut index, &partitions);
         index.remove(&partitions[3]);
         if let Some(first_val) = tests::create_partition_data(&partitions[3]).next() {
             assert!(
-                !index.query(first_val)?.contains(&partitions[3]),
+                !index.query(first_val).await?.contains(&partitions[3]),
                 "querying partitions for '{}' should not yield deleted partition {:?}",
                 first_val,
                 &partitions[3].id

@@ -4,12 +4,17 @@ use crate::{
 };
 
 use super::in_memory::{CuckooIndex, PartitionInfo};
+use async_trait::async_trait;
+use futures::future::try_join;
 use std::{
     fs,
-    io::{Read, Write},
+    io::Write,
     path::PathBuf,
     str::FromStr,
+    time::SystemTime,
 };
+use tokio::io::AsyncReadExt;
+use tokio::fs::File;
 
 #[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistentIndexData<P> {
@@ -65,7 +70,13 @@ where
     }
 
     pub fn persist(&mut self) -> anyhow::Result<()> {
+        let start = SystemTime::now();
         fs::create_dir_all(&self.data_root)?;
+        eprintln!(
+            "tp;persist: {} / {} slots occupied",
+            self.mem_index.buckets[0].len(),
+            self.mem_index.buckets[0].capacity()
+        );
         for (idx, bucket) in self.mem_index.buckets.iter().enumerate() {
             let mut file = fs::OpenOptions::new()
                 .read(false)
@@ -116,16 +127,13 @@ where
         self.data.partitions.len() + self.mem_index.partitions.len()
     }
 
-    fn load_bucket(&self, bucket: u64, buf: &mut Vec<u8>) -> anyhow::Result<()> {
-        let mut file = fs::OpenOptions::new()
-            .read(true)
-            .write(false)
-            .open(&self.data_root.join(format!("{:07}.bucket", bucket)))?;
-        file.read_to_end(buf)?;
+    async fn load_bucket(&self, bucket: u64, buf: &mut Vec<u8>) -> anyhow::Result<()> {
+        let mut file = File::open(&self.data_root.join(format!("{:07}.bucket", bucket))).await?;
+        file.read_to_end(buf).await?;
         Ok(())
     }
 
-    fn query_disk(&self, key: u64) -> anyhow::Result<Vec<P>> {
+    async fn query_disk(&self, key: u64) -> anyhow::Result<Vec<P>> {
         if self.data.partitions.is_empty() {
             return Ok(vec![]);
         }
@@ -134,8 +142,10 @@ where
         let bucket2 = flip_bucket(fingerprint, bucket1, self.data.num_buckets as u64);
         let mut b1_data = vec![];
         let mut b2_data = vec![];
-        self.load_bucket(bucket1, &mut b1_data)?;
-        self.load_bucket(bucket2, &mut b2_data)?;
+        let _x = try_join(
+            self.load_bucket(bucket1, &mut b1_data),
+            self.load_bucket(bucket2, &mut b2_data)
+        ).await?;
         let b1_data_u16 = to_u16_slice(&b1_data);
         let b2_data_u16 = to_u16_slice(&b2_data);
         let mut pos = 0;
@@ -164,13 +174,18 @@ fn to_u16_slice(slice: &[u8]) -> &[u16] {
     unsafe { std::slice::from_raw_parts(slice.as_ptr().cast::<u16>(), num_elems) }
 }
 
+#[async_trait]
 impl<P> PartitionFilter<P> for PersistentIndex<P>
 where
-    P: Clone + serde::Serialize + for<'de> serde::Deserialize<'de>,
+    P: Clone
+        + serde::Serialize
+        + for<'de> serde::Deserialize<'de>
+        + std::marker::Sync
+        + std::marker::Send,
 {
-    fn query(&self, key: u64) -> anyhow::Result<Vec<P>> {
-        let mut disk_results = self.query_disk(key)?;
-        let mut mem_results = self.mem_index.query(key)?;
+    async fn query(&self, key: u64) -> anyhow::Result<Vec<P>> {
+        let mut mem_results = self.mem_index.query(key).await?;
+        let mut disk_results = self.query_disk(key).await?;
         disk_results.append(&mut mem_results);
         Ok(disk_results)
     }
@@ -201,8 +216,8 @@ mod tests {
 
     static SEED: u64 = 1337;
 
-    #[test]
-    fn query_in_memory_index() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn query_in_memory_index() -> anyhow::Result<()> {
         // let partitions = &tests::create_test_data(10, (5, 17), SEED)[9..];
         let partitions = &tests::create_test_data(100, (999, 4999), SEED);
         let mut index: PersistentIndex<TestPartition> =
@@ -212,7 +227,7 @@ mod tests {
         for p in partitions {
             if let Some(first_val) = tests::create_partition_data(&p).next() {
                 assert!(
-                    index.query(first_val)?.contains(&p),
+                    index.query(first_val).await?.contains(&p),
                     "querying partitions for '{}' does not yield expected {:?}",
                     first_val,
                     &p.id
@@ -224,8 +239,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn dont_yield_removed_partitions() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn dont_yield_removed_partitions() -> anyhow::Result<()> {
         let partitions = &tests::create_test_data(10, (99, 499), SEED);
         let mut index: PersistentIndex<TestPartition> =
             PersistentIndex::try_new(80, "".to_string())?;
@@ -233,7 +248,7 @@ mod tests {
         index.remove(&partitions[3]);
         if let Some(first_val) = tests::create_partition_data(&partitions[3]).next() {
             assert!(
-                !index.query(first_val)?.contains(&partitions[3]),
+                !index.query(first_val).await?.contains(&partitions[3]),
                 "querying partitions for '{}' should not yield deleted partition {:?}",
                 first_val,
                 &partitions[3].id
@@ -242,8 +257,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn verify_persisted_bucket_sizes() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn verify_persisted_bucket_sizes() -> anyhow::Result<()> {
         let partitions = &tests::create_test_data(10, (99, 499), SEED);
         let temp_dir = tempfile::tempdir()?;
         let storage_root = temp_dir.path();
@@ -268,8 +283,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn deserialize_persisted_state() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn deserialize_persisted_state() -> anyhow::Result<()> {
         let partitions = &tests::create_test_data(10, (99, 499), SEED);
         let temp_dir = tempfile::tempdir()?;
         let storage_root = temp_dir.path();
@@ -284,8 +299,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn serve_queries_from_disk() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn serve_queries_from_disk() -> anyhow::Result<()> {
         let partitions = &tests::create_test_data(3, (10, 20), SEED);
         let temp_dir = tempfile::tempdir()?;
         let storage_root = temp_dir.path();
@@ -300,7 +315,7 @@ mod tests {
         for p in partitions {
             if let Some(first_val) = tests::create_partition_data(&p).next() {
                 assert!(
-                    index_from_disk.query(first_val)?.contains(&p),
+                    index_from_disk.query(first_val).await?.contains(&p),
                     "querying partitions for '{}' does not yield expected {:?}",
                     first_val,
                     &p.id
@@ -313,8 +328,8 @@ mod tests {
     }
 
     // serve queries from a mixed of persisted and in-memory partitions
-    #[test]
-    fn serve_queries_mixed() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn serve_queries_mixed() -> anyhow::Result<()> {
         let partitions = &tests::create_test_data(3, (10, 20), SEED);
         let (first_half, second_half) = partitions.split_at(2);
         let temp_dir = tempfile::tempdir()?;
@@ -331,7 +346,7 @@ mod tests {
         for p in partitions {
             if let Some(first_val) = tests::create_partition_data(&p).next() {
                 assert!(
-                    index_from_disk.query(first_val)?.contains(&p),
+                    index_from_disk.query(first_val).await?.contains(&p),
                     "querying partitions for '{}' does not yield expected {:?}",
                     first_val,
                     &p.id
@@ -344,8 +359,8 @@ mod tests {
     }
 
     // serve queries from a mixed of persisted and in-memory partitions
-    #[test]
-    fn serve_queries_multiple_persist() -> anyhow::Result<()> {
+    #[tokio::test]
+    async fn serve_queries_multiple_persist() -> anyhow::Result<()> {
         let partitions = &tests::create_test_data(10, (99, 499), SEED);
         let temp_dir = tempfile::tempdir()?;
         let storage_root = temp_dir.path().to_str().unwrap();
@@ -358,7 +373,7 @@ mod tests {
         for p in partitions {
             if let Some(first_val) = tests::create_partition_data(&p).next() {
                 assert!(
-                    index.query(first_val)?.contains(&p),
+                    index.query(first_val).await?.contains(&p),
                     "querying partitions for '{}' does not yield expected {:?}",
                     first_val,
                     &p.id

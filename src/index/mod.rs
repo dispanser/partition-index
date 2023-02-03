@@ -1,6 +1,7 @@
 pub mod in_memory;
 pub mod poc;
 
+use async_trait::async_trait;
 /// The underlying assumption here is that we're indexing "partitions"
 /// on an unknown stream of data. The only representation we can retrieve
 /// is a hashed representation of all values to be indexed.
@@ -10,36 +11,13 @@ pub mod poc;
 /// It is also possible to index multiple columns into the same index,
 /// even if the columns have different types.
 
-/// TODO:
-/// - how do we actually "reference" a partition that we identified?
-///   - is there some sort of serializable representation we can store?
-///   - do we just return an (increasing) number (our index / offset)?
-///     - this would enable us to solve the problem elsewhere
-/// - can we support indexing multiple columns?
-///   - it feels wasteful to register a single partition multiple times
-///   - metadata overlaps, and using the same offset in all indexes would be great
-/// - we could think of the partition itself as just some identifier of the aactual
-///   partition entity, and do `add(values: Iterator<Item = u64>, i: ID); in the Index
-///   - I like that: we decouple the knowledge about structure, type, ... of partitions
-///   - we pass in the minimum necessary thing to do its job.
-/// - in terms of API design, can we split the API into multiple traits?
-///   - `PartitionLookup`
-///   - `PartitionIndexer`
-///   - ... (delete) ...
-///   - It may make sense to have higher-level constructs that manage mutations
-///     - by maintaining a WAL + batching writes in memory
-///     - tombstone handling
-///     - they could even manage multiple Lookup sets
-///     - e.g. a partition key (as in, hive partitioning) to split into multiple indexes
-
-/// A trait that allows querying a data set for matching partitions.
-/// TODO: P should probably be somehow serializable
+#[async_trait]
 pub trait PartitionFilter<P>
 {
     /// Query matching partitions for a given value
     /// TODO: what's the result type here? It's either the partition, or
     /// some kind of partition ID.
-    fn query(&self, value: u64) -> anyhow::Result<Vec<P>>;
+    async fn query(&self, value: u64) -> anyhow::Result<Vec<P>>;
 }
 
 pub trait PartitionIndex<P>

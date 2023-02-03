@@ -1,17 +1,20 @@
 use partition_index::{
     self, benchmarks::BenchmarkPartition, index::poc::PersistentIndex, index::PartitionFilter,
 };
-use rayon::prelude::*;
 use rstats::{noop, Median, Stats};
 use std::time::{Duration, SystemTime};
+use futures::{stream::FuturesUnordered, StreamExt};
 
-fn run_query(index: &PersistentIndex<BenchmarkPartition>, i: u64) -> anyhow::Result<Duration> {
+async fn run_query(
+    index: &PersistentIndex<BenchmarkPartition>,
+    i: u64,
+) -> anyhow::Result<Duration> {
     let s = SystemTime::now();
-    index.query(i)?;
+    index.query(i).await?;
     Ok(s.elapsed()?)
 }
 
-fn run_benchmark(index_root: &str, num_queries: u64, parallelism: usize) -> anyhow::Result<()> {
+async fn run_benchmark(index_root: &str, num_queries: u64, parallelism: usize) -> anyhow::Result<()> {
     rayon::ThreadPoolBuilder::new().num_threads(parallelism).build_global().unwrap();
     let index = PersistentIndex::<BenchmarkPartition>::try_load_from_disk(index_root.to_string())?;
     let partition_size = index
@@ -22,10 +25,11 @@ fn run_benchmark(index_root: &str, num_queries: u64, parallelism: usize) -> anyh
     let queries = Vec::from_iter(0..num_queries);
     // let queries = 0..num_queries;
     let start_querying = SystemTime::now();
-    let results: Vec<f64> = queries
-        .par_iter()
-        .map(|i| run_query(&index, *i).unwrap().as_micros() as f64)
+    let result_futures: FuturesUnordered<_> = queries
+        .iter()
+        .map(|i| async { run_query(&index, *i).await.unwrap().as_micros() as f64 })
         .collect();
+    let results = result_futures.collect::<Vec<_>>().await;
     let query_duration = start_querying.elapsed()?;
     println!(
        "tp;bench query: queried {} elems in {:?} ({:?} ops)",
@@ -58,11 +62,12 @@ fn run_benchmark(index_root: &str, num_queries: u64, parallelism: usize) -> anyh
     Ok(())
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     use std::env;
     let args: Vec<String> = env::args().collect();
     let index_root = &args[1];
     let num_queries = args[2].parse()?;
     let parallelism = args[3].parse()?;
-    run_benchmark(index_root, num_queries, parallelism)
+    run_benchmark(index_root, num_queries, parallelism).await
 }
