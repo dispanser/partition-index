@@ -22,7 +22,6 @@ async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = env::args().collect();
     let file_path = &args[1];
     let num_queries: u64 = args[2].parse()?;
-    let parallelism: u64 = args[3].parse()?;
 
     let index = Arc::new(PersistentIndex::<BenchmarkPartition>::try_load_from_disk(
         file_path.to_string(),

@@ -7,10 +7,9 @@ use super::in_memory::{CuckooIndex, PartitionInfo};
 use async_trait::async_trait;
 use std::{
     fs,
-    io::{Write, Read},
+    io::{Read, Write},
     path::PathBuf,
     str::FromStr,
-    time::SystemTime,
 };
 
 #[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -67,7 +66,6 @@ where
     }
 
     pub fn persist(&mut self) -> anyhow::Result<()> {
-        let start = SystemTime::now();
         fs::create_dir_all(&self.data_root)?;
         eprintln!(
             "tp;persist: {} / {} slots occupied",
@@ -97,6 +95,10 @@ where
 
     pub fn num_buckes(&self) -> u64 {
         self.data.num_buckets
+    }
+
+    pub fn num_slots(&self) -> usize {
+        self.data.slots
     }
 
     pub fn estimate_mem_size(&self) -> usize {
