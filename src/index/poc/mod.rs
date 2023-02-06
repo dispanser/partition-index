@@ -91,6 +91,10 @@ where
         self.data.num_buckets
     }
 
+    pub fn num_slots(&self) -> usize {
+        self.data.slots
+    }
+
     pub fn estimate_mem_size(&self) -> usize {
         self.mem_index.partitions.capacity() * std::mem::size_of::<P>()
             + self.data.partitions.capacity() * std::mem::size_of::<P>()

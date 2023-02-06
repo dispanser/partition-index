@@ -1,5 +1,6 @@
 use partition_index::{
-    self, benchmarks::BenchmarkPartition, index::poc::PersistentIndex, index::PartitionFilter,
+    self, benchmarks::{read_throughput, BenchmarkResult}, benchmarks::{BenchmarkPartition, result_csv_line},
+    index::poc::PersistentIndex, index::PartitionFilter,
 };
 use rayon::prelude::*;
 use rstats::{noop, Median, Stats};
@@ -11,8 +12,11 @@ fn run_query(index: &PersistentIndex<BenchmarkPartition>, i: u64) -> anyhow::Res
     Ok(s.elapsed()?)
 }
 
-fn run_benchmark(index_root: &str, num_queries: u64, parallelism: usize) -> anyhow::Result<()> {
-    rayon::ThreadPoolBuilder::new().num_threads(parallelism).build_global().unwrap();
+fn run_benchmark(index_root: &str, num_queries: u64, parallelism: usize) -> anyhow::Result<BenchmarkResult> {
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(parallelism)
+        .build_global()
+        .unwrap();
     let index = PersistentIndex::<BenchmarkPartition>::try_load_from_disk(index_root.to_string())?;
     let partition_size = index
         .partitions()
@@ -28,34 +32,23 @@ fn run_benchmark(index_root: &str, num_queries: u64, parallelism: usize) -> anyh
         .collect();
     let query_duration = start_querying.elapsed()?;
     println!(
-       "tp;bench query: queried {} elems in {:?} ({:?} ops)",
-       num_queries,
-       query_duration,
-       num_queries as u128 * 1000 / query_duration.as_millis()
+        "tp;bench query: queried {} elems in {:?} ({:?} ops)",
+        num_queries,
+        query_duration,
+        num_queries as u128 * 1000 / query_duration.as_millis()
     );
     let med = results.medinfo(&mut noop)?;
     let ameanstats = results.ameanstd()?;
-    // partitions, elements per partition, buckets, parallelism,
-    // throughput, mean latency, std dev latency,
-    // median, 1st quartile, 3rd quartile, med, standard error
-    eprintln!(
-        "{},{},{},{},{},{},{},{},{},{},{},{}",
-        index.num_partitions(),
+    Ok(BenchmarkResult {
+        partitions: index.num_partitions(),
         partition_size,
-        index.num_buckes(),
+        num_buckets: index.num_buckes(),
         parallelism,
-        num_queries as u128 * 1000 / query_duration.as_millis(),
-        ameanstats.centre,
-        ameanstats.dispersion,
-        med.median,
-        med.lq,
-        med.uq,
-        med.mad,
-        med.ste,
-    );
-    println!("Median     {}", med);
-    println!("Arithmetic {}", ameanstats);
-    Ok(())
+        qps: num_queries as u128 * 1000 / query_duration.as_millis(),
+        ameanstats,
+        medianstats: med,
+        read_throughput: read_throughput(&query_duration, index.num_slots(), num_queries),
+    })
 }
 
 fn main() -> anyhow::Result<()> {
@@ -64,5 +57,9 @@ fn main() -> anyhow::Result<()> {
     let index_root = &args[1];
     let num_queries = args[2].parse()?;
     let parallelism = args[3].parse()?;
-    run_benchmark(index_root, num_queries, parallelism)
+    let benchmark_result = run_benchmark(index_root, num_queries, parallelism)?;
+    eprintln!("{}", result_csv_line(&benchmark_result));
+    println!("Median     {}", benchmark_result.medianstats);
+    println!("Arithmetic {}", benchmark_result.ameanstats);
+    Ok(())
 }
