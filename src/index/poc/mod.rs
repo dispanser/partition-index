@@ -5,16 +5,13 @@ use crate::{
 
 use super::in_memory::{CuckooIndex, PartitionInfo};
 use async_trait::async_trait;
-use futures::future::try_join;
 use std::{
     fs,
-    io::Write,
+    io::{Write, Read},
     path::PathBuf,
     str::FromStr,
     time::SystemTime,
 };
-use tokio::io::AsyncReadExt;
-use tokio::fs::File;
 
 #[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PersistentIndexData<P> {
@@ -127,9 +124,9 @@ where
         self.data.partitions.len() + self.mem_index.partitions.len()
     }
 
-    async fn load_bucket(&self, bucket: u64, buf: &mut Vec<u8>) -> anyhow::Result<()> {
-        let mut file = File::open(&self.data_root.join(format!("{:07}.bucket", bucket))).await?;
-        file.read_to_end(buf).await?;
+    fn load_bucket(&self, bucket: u64, buf: &mut Vec<u8>) -> anyhow::Result<()> {
+        let mut file = fs::File::open(&self.data_root.join(format!("{:07}.bucket", bucket)))?;
+        file.read_to_end(buf)?;
         Ok(())
     }
 
@@ -142,10 +139,8 @@ where
         let bucket2 = flip_bucket(fingerprint, bucket1, self.data.num_buckets as u64);
         let mut b1_data = vec![];
         let mut b2_data = vec![];
-        let _x = try_join(
-            self.load_bucket(bucket1, &mut b1_data),
-            self.load_bucket(bucket2, &mut b2_data)
-        ).await?;
+        self.load_bucket(bucket1, &mut b1_data)?;
+        self.load_bucket(bucket2, &mut b2_data)?;
         let b1_data_u16 = to_u16_slice(&b1_data);
         let b2_data_u16 = to_u16_slice(&b2_data);
         let mut pos = 0;
