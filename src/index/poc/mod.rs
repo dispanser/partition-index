@@ -82,15 +82,13 @@ where
             .create(true)
             .open(PathBuf::from_str(&self.storage_root)?.join("partitions.data"))?;
         bincode::serialize_into(file, &self.data)?;
-        eprintln!(
-            "tp;persist: {} slots over {} in {} ms",
-            self.mem_index.slots,
-            self.data.num_buckets,
-            start.elapsed()?.as_millis(),
-        );
         self.mem_index = CuckooIndex::new(self.data.num_buckets);
 
         Ok(())
+    }
+
+    pub fn num_buckes(&self) -> u64 {
+        self.data.num_buckets
     }
 
     pub fn estimate_mem_size(&self) -> usize {
