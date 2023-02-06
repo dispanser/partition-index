@@ -11,14 +11,9 @@ fn run_query(index: &PersistentIndex<BenchmarkPartition>, i: u64) -> anyhow::Res
     Ok(s.elapsed()?)
 }
 
-fn main() -> anyhow::Result<()> {
-    use std::env;
-    let args: Vec<String> = env::args().collect();
-    let file_path = &args[1];
-    let num_queries = args[2].parse()?;
-    let parallelism = args[3].parse()?;
+fn run_benchmark(index_root: &str, num_queries: u64, parallelism: usize) -> anyhow::Result<()> {
     rayon::ThreadPoolBuilder::new().num_threads(parallelism).build_global().unwrap();
-    let index = PersistentIndex::<BenchmarkPartition>::try_load_from_disk(file_path.to_string())?;
+    let index = PersistentIndex::<BenchmarkPartition>::try_load_from_disk(index_root.to_string())?;
     let partition_size = index
         .partitions()
         .next()
@@ -40,7 +35,8 @@ fn main() -> anyhow::Result<()> {
     );
     let med = results.medinfo(&mut noop)?;
     let ameanstats = results.ameanstd()?;
-    // partitions, elements per partition, buckets, throughput, mean latency, std dev latency,
+    // partitions, elements per partition, buckets, parallelism,
+    // throughput, mean latency, std dev latency,
     // median, 1st quartile, 3rd quartile, med, standard error
     eprintln!(
         "{},{},{},{},{},{},{},{},{},{},{},{}",
@@ -60,4 +56,13 @@ fn main() -> anyhow::Result<()> {
     println!("Median     {}", med);
     println!("Arithmetic {}", ameanstats);
     Ok(())
+}
+
+fn main() -> anyhow::Result<()> {
+    use std::env;
+    let args: Vec<String> = env::args().collect();
+    let index_root = &args[1];
+    let num_queries = args[2].parse()?;
+    let parallelism = args[3].parse()?;
+    run_benchmark(index_root, num_queries, parallelism)
 }
