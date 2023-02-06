@@ -2,11 +2,11 @@ use partition_index::{
     self, benchmarks::BenchmarkPartition, index::poc::PersistentIndex, index::PartitionFilter,
 };
 use rstats::{noop, Median, Stats};
-use std::time::{Duration, SystemTime};
-use futures::{stream::FuturesUnordered, StreamExt};
+use std::{time::{Duration, SystemTime}, sync::Arc};
+use futures::{stream, StreamExt, TryStreamExt};
 
 async fn run_query(
-    index: &PersistentIndex<BenchmarkPartition>,
+    index: Arc<PersistentIndex<BenchmarkPartition>>,
     i: u64,
 ) -> anyhow::Result<Duration> {
     let s = SystemTime::now();
@@ -16,7 +16,9 @@ async fn run_query(
 
 async fn run_benchmark(index_root: &str, num_queries: u64, parallelism: usize) -> anyhow::Result<()> {
     rayon::ThreadPoolBuilder::new().num_threads(parallelism).build_global().unwrap();
-    let index = PersistentIndex::<BenchmarkPartition>::try_load_from_disk(index_root.to_string())?;
+    let index = Arc::new(PersistentIndex::<BenchmarkPartition>::try_load_from_disk(
+        index_root.to_string(),
+    )?);
     let partition_size = index
         .partitions()
         .next()
@@ -25,11 +27,16 @@ async fn run_benchmark(index_root: &str, num_queries: u64, parallelism: usize) -
     let queries = Vec::from_iter(0..num_queries);
     // let queries = 0..num_queries;
     let start_querying = SystemTime::now();
-    let result_futures: FuturesUnordered<_> = queries
-        .iter()
-        .map(|i| async { run_query(&index, *i).await.unwrap().as_micros() as f64 })
+    let result_futures = stream::iter(queries)
+        .map(|i| {
+            let idx_clone = Arc::clone(&index);
+            tokio::spawn(run_query(idx_clone, i))
+        })
+        .buffer_unordered(parallelism);
+    let results: Vec<_> = result_futures.try_collect::<Vec<_>>().await?
+        .into_iter()
+        .map(|x| x.unwrap().as_micros() as f64)
         .collect();
-    let results = result_futures.collect::<Vec<_>>().await;
     let query_duration = start_querying.elapsed()?;
     println!(
        "tp;bench query: queried {} elems in {:?} ({:?} ops)",

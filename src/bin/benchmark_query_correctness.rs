@@ -27,13 +27,16 @@ async fn main() -> anyhow::Result<()> {
     let index = Arc::new(PersistentIndex::<BenchmarkPartition>::try_load_from_disk(
         file_path.to_string(),
     )?);
-    let p0 = index.partitions().next().expect("invalid: empty index");
-    let max_value = p0.elements() * index.num_partitions() as u64;
-    let start_querying = SystemTime::now();
-
+    let max_value = index
+        .partitions()
+        .next()
+        .expect("invalid: empty index")
+        .elements()
+        * index.num_partitions() as u64;
     let value_distribution = Uniform::new(0, max_value);
     let mut data_rng = rand_xoshiro::Xoshiro256PlusPlus::seed_from_u64(1337);
 
+    let start_querying = SystemTime::now();
     let query_results: Vec<_> = (0..num_queries)
         // .map(|_| run_query(&index, data_rng.sample(value_distribution)))
         .map(|_| {
