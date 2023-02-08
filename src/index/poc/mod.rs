@@ -96,11 +96,11 @@ where
     }
 
     pub fn estimate_mem_size(&self) -> usize {
-        self.mem_index.partitions.capacity() * std::mem::size_of::<P>()
-            + self.data.partitions.capacity() * std::mem::size_of::<P>()
-            + self.mem_index.buckets.capacity()
-                * self.data.num_buckets as usize
-                * std::mem::size_of::<u16>()
+        (self.mem_index.partitions.capacity() + self.data.partitions.capacity())
+            * std::mem::size_of::<P>()
+            + self.data.num_buckets as usize
+                * (self.mem_index.buckets[0].capacity() * std::mem::size_of::<u16>()
+                    + std::mem::size_of::<Vec<u16>>())
     }
 
     pub fn estimate_disk_size(&self) -> usize {
