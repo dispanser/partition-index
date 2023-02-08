@@ -1,7 +1,4 @@
-use partition_index::{
-    self,
-    benchmarks::create_index,
-};
+use partition_index::{self, benchmarks::create_index};
 use std::time::SystemTime;
 
 fn main() -> anyhow::Result<()> {

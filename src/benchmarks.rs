@@ -34,7 +34,8 @@ pub fn result_csv_header() -> String {
     "partitions,elements per partition,buckets,parallelism,\
     queries per second,mean latency (μs),std dev latency,\
     median (μs),mad,standard error,\
-    read throughput (MB/s)".to_string()
+    read throughput (MB/s)"
+        .to_string()
 }
 
 pub fn result_csv_line(benchmark_result: &BenchmarkResult) -> String {
@@ -122,10 +123,12 @@ pub fn run_benchmark(
     let queries = Vec::from_iter(0..num_queries);
     // let queries = 0..num_queries;
     let start_querying = SystemTime::now();
-    let results: Vec<f64> = thread_pool.install(|| queries
-        .par_iter()
-        .map(|i| run_query(&index, *i).unwrap().as_micros() as f64)
-        .collect());
+    let results: Vec<f64> = thread_pool.install(|| {
+        queries
+            .par_iter()
+            .map(|i| run_query(&index, *i).unwrap().as_micros() as f64)
+            .collect()
+    });
     let query_duration = start_querying.elapsed()?;
     println!(
         "tp;bench query: queried {} elems in {:?} ({:?} ops) using {} threads",

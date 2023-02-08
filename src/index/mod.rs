@@ -34,16 +34,14 @@ pub mod poc;
 
 /// A trait that allows querying a data set for matching partitions.
 /// TODO: P should probably be somehow serializable
-pub trait PartitionFilter<P>
-{
+pub trait PartitionFilter<P> {
     /// Query matching partitions for a given value
     /// TODO: what's the result type here? It's either the partition, or
     /// some kind of partition ID.
     fn query(&self, value: u64) -> anyhow::Result<Vec<P>>;
 }
 
-pub trait PartitionIndex<P>
-{
+pub trait PartitionIndex<P> {
     /// Add a partition to the index.
     /// @param values an iterator of the values stored in the partition
     /// @param partition the partition identifier to associate the values with

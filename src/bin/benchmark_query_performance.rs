@@ -1,4 +1,8 @@
-use partition_index::{self, index::poc::PersistentIndex, benchmarks::{result_csv_line, run_benchmark, BenchmarkPartition}};
+use partition_index::{
+    self,
+    benchmarks::{result_csv_line, run_benchmark, BenchmarkPartition},
+    index::poc::PersistentIndex,
+};
 
 fn main() -> anyhow::Result<()> {
     use std::env;

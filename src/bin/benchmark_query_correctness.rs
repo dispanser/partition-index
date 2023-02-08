@@ -10,8 +10,7 @@ fn main() -> anyhow::Result<()> {
     let file_path = &args[1];
     let num_queries: u64 = args[2].parse()?;
 
-    let index =
-        PersistentIndex::<BenchmarkPartition>::try_load_from_disk(file_path.to_string())?;
+    let index = PersistentIndex::<BenchmarkPartition>::try_load_from_disk(file_path.to_string())?;
     let p0 = index.partitions().next().expect("invalid: empty index");
     let max_value = p0.elements() * index.num_partitions() as u64;
     let start_querying = SystemTime::now();

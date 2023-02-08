@@ -13,7 +13,7 @@ use std::{fs, io::Read, os::unix::prelude::MetadataExt, path::PathBuf, str::From
 // !! looking at a single bucket, distribution is far from the uniform:
 //   - [179, 317, 0, 123, 0, 293, 141, 295, 0, 132, 0, 304, 176, 314, 0]
 //   - I see a pattern: [... zero, high, low, high, zero, low, zero, ...]
-//   - it's not _that_ simple, but it's clear that not every fingerprint 
+//   - it's not _that_ simple, but it's clear that not every fingerprint
 //     goes into every bucket so the probability of finding a fingerprint
 //     in a bucket is far higher than it should be
 //   - in this case, there should be ~ 11 mio values in a bucket,

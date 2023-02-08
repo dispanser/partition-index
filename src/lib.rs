@@ -1,6 +1,6 @@
+pub mod benchmarks;
 pub mod filter;
 pub mod index;
-pub mod benchmarks;
 
 use arrow2::array;
 use arrow2::error::Error;
