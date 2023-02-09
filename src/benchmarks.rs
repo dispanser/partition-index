@@ -1,7 +1,6 @@
 use std::time::{Duration, SystemTime};
 
-use rayon::prelude::{IntoParallelRefIterator, ParallelIterator};
-use rstats::{noop, MStats, Med, Median, Stats};
+use rstats::{noop, MStats, Median, Stats};
 
 use crate::index::{poc::PersistentIndex, PartitionFilter, PartitionIndex};
 
@@ -20,6 +19,7 @@ impl BenchmarkPartition {
 }
 
 pub struct BenchmarkResult {
+    pub num_queries: usize,
     pub partitions: usize,
     pub partition_size: u64,
     pub num_buckets: u64,
@@ -109,7 +109,7 @@ fn run_query(index: &PersistentIndex<BenchmarkPartition>, i: u64) -> anyhow::Res
 
 pub fn run_benchmark(
     index: &PersistentIndex<BenchmarkPartition>,
-    num_queries: u64,
+    duration: Duration,
     parallelism: usize,
 ) -> anyhow::Result<BenchmarkResult> {
     let thread_pool = rayon::ThreadPoolBuilder::new()
@@ -120,16 +120,37 @@ pub fn run_benchmark(
         .next()
         .expect("invalid: empty index")
         .elements();
-    let queries = Vec::from_iter(0..num_queries);
-    // let queries = 0..num_queries;
+    let batch_size = usize::MAX / parallelism;
+    let mut thread_results: Vec<Vec<Duration>> = vec![vec![]; parallelism];
     let start_querying = SystemTime::now();
-    let results: Vec<f64> = thread_pool.install(|| {
-        queries
-            .par_iter()
-            .map(|i| run_query(&index, *i).unwrap().as_micros() as f64)
-            .collect()
+    thread_pool.scope(|s| {
+        for (task, res_ref) in thread_results.iter_mut().enumerate() {
+            let start = batch_size * task;
+            let end = start + batch_size;
+            s.spawn(move |_| {
+                *res_ref = (start..end)
+                    .into_iter()
+                    .map(|i| {
+                        if start_querying.elapsed().unwrap() < duration {
+                            Some(run_query(&index, i as u64).unwrap())
+                        } else {
+                            None
+                        }
+                    })
+                    .take_while(|e| e.is_some())
+                    .map(|e| e.unwrap())
+                    .collect();
+            });
+        }
     });
     let query_duration = start_querying.elapsed()?;
+    let results: Vec<_> = thread_results
+        .iter()
+        .flatten()
+        .map(|d| d.as_micros() as f64)
+        .collect();
+
+    let num_queries: usize = results.len();
     println!(
         "tp;bench query: queried {} elems in {:?} ({:?} ops) using {} threads",
         num_queries,
@@ -140,6 +161,7 @@ pub fn run_benchmark(
     let ameanstats = results.ameanstd()?;
     let med = results.medstats(&mut noop)?;
     Ok(BenchmarkResult {
+        num_queries,
         partitions: index.num_partitions(),
         partition_size,
         num_buckets: index.num_buckes(),
@@ -152,7 +174,7 @@ pub fn run_benchmark(
 }
 
 /// compute the MB/s read performance
-pub fn read_throughput(d: &Duration, num_slots: usize, num_queries: u64) -> f64 {
+pub fn read_throughput(d: &Duration, num_slots: usize, num_queries: usize) -> f64 {
     // read b buckets times two bytes times two buckets times num queries
-    ((num_slots as u64 * num_queries * 2 * 2 * 1000) / (1 << 20)) as f64 / d.as_millis() as f64
+    ((num_slots * num_queries * 2 * 2 * 1000) / (1 << 20)) as f64 / d.as_millis() as f64
 }

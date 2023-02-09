@@ -1,4 +1,4 @@
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, time::Duration};
 
 use partition_index::{
     benchmarks::{
@@ -14,7 +14,7 @@ fn run_single(
     elements: u64,
     buckets: u64,
 ) -> anyhow::Result<Vec<BenchmarkResult>> {
-    let num_queries = 500000;
+    let time_limit = Duration::from_secs(300);
     let parallelism = [1, 2, 3, 4, 6, 8, 12, 16]; //, 24, 32, 48, 64];
     let index_root = format!(
         "/home/data/tmp/partition_index/query_benchmarks/scratch/p={}/e={}/b={}",
@@ -32,7 +32,7 @@ fn run_single(
     // using the same index to run queries with different levels of parallelism
     let results = parallelism
         .iter()
-        .map(|p| run_benchmark(&index, num_queries, *p).expect("waddabadda"))
+        .map(|p| run_benchmark(&index, time_limit, *p).expect("waddabadda"))
         .collect();
     let _ = fs::remove_dir_all(index_root)?;
     Ok(results)
