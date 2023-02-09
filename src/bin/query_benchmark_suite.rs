@@ -14,7 +14,7 @@ fn run_single(
     elements: u64,
     buckets: u64,
 ) -> anyhow::Result<Vec<BenchmarkResult>> {
-    let time_limit = Duration::from_secs(300);
+    let time_limit = Duration::from_secs(60);
     let parallelism = [1, 2, 3, 4, 6, 8, 12, 16]; //, 24, 32, 48, 64];
     let index_root = format!(
         "/home/data/tmp/partition_index/query_benchmarks/scratch/p={}/e={}/b={}",
@@ -40,7 +40,7 @@ fn run_single(
 
 fn main() -> anyhow::Result<()> {
     let partitions = [1000, 10000, 100000, 1000000];
-    let elements = [1000, 10000, 100000, 1000000];
+    let elements = [10000, 100000, 1000000];
     let buckets = [2200, 22000, 220000];
 
     let mut benchmark_results = vec![];

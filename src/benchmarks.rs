@@ -31,7 +31,7 @@ pub struct BenchmarkResult {
 }
 
 pub fn result_csv_header() -> String {
-    "partitions,elements per partition,buckets,parallelism,\
+    "queries,partitions,elements per partition,buckets,parallelism,\
     queries per second,mean latency (μs),std dev latency,\
     median (μs),mad,standard error,\
     read throughput (MB/s)"
@@ -43,7 +43,8 @@ pub fn result_csv_line(benchmark_result: &BenchmarkResult) -> String {
     // queries per second,mean latency (μs),std dev latency,
     // median (μs),mad,read throughput (MB/s)
     format!(
-        "{},{},{},{},{},{},{},{},{},{}",
+        "{},{},{},{},{},{},{},{},{},{},{}",
+        benchmark_result.num_queries,
         benchmark_result.partitions,
         benchmark_result.partition_size,
         benchmark_result.num_buckets,
@@ -89,12 +90,16 @@ pub fn create_index(
     let mut index = PersistentIndex::try_new(buckets, index_root.to_string())?;
     for p in partitions {
         index_partition(&mut index, p);
-        if index.estimate_mem_size() > (1 << 30) {
-            eprintln!(
-                "tp;bench01::persist: {} bytes in memory",
-                index.estimate_mem_size()
-            );
+        let size = index.estimate_mem_size();
+        if size > (1 << 30) {
+            let start = SystemTime::now();
             index.persist()?;
+            eprintln!(
+                "tp;bench01::persist: {} -> {} in {:?}",
+                size,
+                index.estimate_mem_size(),
+                start.elapsed()?
+            );
         }
     }
     index.persist()?;
