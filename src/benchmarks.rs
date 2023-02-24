@@ -28,13 +28,16 @@ pub struct BenchmarkResult {
     pub ameanstats: MStats,
     pub medianstats: MStats,
     pub read_throughput: f64,
+    pub false_positive_rate: f64,
+    pub expected_fp_rate: f64,
+    pub occupancy: f64,
 }
 
 pub fn result_csv_header() -> String {
     "queries,partitions,elements per partition,buckets,parallelism,\
     queries per second,mean latency (μs),std dev latency,\
     median (μs),mad,standard error,\
-    read throughput (MB/s)"
+    read throughput (MB/s),false positive rate,expected fp rate,occupancy"
         .to_string()
 }
 
@@ -43,7 +46,7 @@ pub fn result_csv_line(benchmark_result: &BenchmarkResult) -> String {
     // queries per second,mean latency (μs),std dev latency,
     // median (μs),mad,read throughput (MB/s)
     format!(
-        "{},{},{},{},{},{},{},{},{},{},{}",
+        "{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
         benchmark_result.num_queries,
         benchmark_result.partitions,
         benchmark_result.partition_size,
@@ -55,6 +58,9 @@ pub fn result_csv_line(benchmark_result: &BenchmarkResult) -> String {
         benchmark_result.medianstats.centre,
         benchmark_result.medianstats.dispersion,
         benchmark_result.read_throughput,
+        benchmark_result.false_positive_rate,
+        benchmark_result.expected_fp_rate,
+        benchmark_result.occupancy,
     )
 }
 
@@ -106,10 +112,23 @@ pub fn create_index(
     Ok(())
 }
 
-fn run_query(index: &PersistentIndex<BenchmarkPartition>, i: u64) -> anyhow::Result<Duration> {
+#[derive(Debug, Clone)]
+struct QueryRun {
+    duration: Duration,
+    false_positives: usize,
+}
+
+fn run_query(index: &PersistentIndex<BenchmarkPartition>, i: u64, max_elem: u64) -> anyhow::Result<QueryRun> {
     let s = SystemTime::now();
-    index.query(i)?;
-    Ok(s.elapsed()?)
+    let results = index.query(i)?.len();
+    Ok(QueryRun {
+        duration: s.elapsed()?,
+        false_positives: if i >= max_elem { 
+            results
+        } else {
+            results - 1
+        },
+    })
 }
 
 pub fn run_benchmark(
@@ -120,13 +139,11 @@ pub fn run_benchmark(
     let thread_pool = rayon::ThreadPoolBuilder::new()
         .num_threads(parallelism)
         .build()?;
-    let partition_size = index
-        .partitions()
-        .next()
-        .expect("invalid: empty index")
-        .elements();
+    let p0 = index.partitions().next().expect("invalid: empty index");
+    let partition_size = p0.elements();
     let batch_size = usize::MAX / parallelism;
-    let mut thread_results: Vec<Vec<Duration>> = vec![vec![]; parallelism];
+    let index_size = partition_size * index.num_partitions() as u64;
+    let mut thread_results: Vec<Vec<QueryRun>> = vec![vec![]; parallelism];
     let start_querying = SystemTime::now();
     thread_pool.scope(|s| {
         for (task, res_ref) in thread_results.iter_mut().enumerate() {
@@ -137,7 +154,7 @@ pub fn run_benchmark(
                     .into_iter()
                     .map(|i| {
                         if start_querying.elapsed().unwrap() < duration {
-                            Some(run_query(&index, i as u64).unwrap())
+                            Some(run_query(&index, i as u64, index_size).unwrap())
                         } else {
                             None
                         }
@@ -149,13 +166,17 @@ pub fn run_benchmark(
         }
     });
     let query_duration = start_querying.elapsed()?;
-    let results: Vec<_> = thread_results
+    let durations: Vec<_> = thread_results
         .iter()
         .flatten()
-        .map(|d| d.as_micros() as f64)
+        .map(|d| d.duration.as_micros() as f64)
         .collect();
-
-    let num_queries: usize = results.len();
+    let false_positives: usize = thread_results
+        .iter()
+        .flatten()
+        .map(|vs| vs.false_positives)
+        .sum();
+    let num_queries: usize = durations.len();
     println!(
         "tp;bench query: queried {} elems in {:?} ({:?} ops) using {} threads",
         num_queries,
@@ -163,18 +184,25 @@ pub fn run_benchmark(
         num_queries as u128 * 1000 / query_duration.as_millis(),
         parallelism,
     );
-    let ameanstats = results.ameanstd()?;
-    let med = results.medstats(&mut noop)?;
+    let ameanstats = durations.ameanstd()?;
+    let med = durations.medstats(&mut noop)?;
+    let index_capacity = index.num_slots() as u64 * index.num_buckets();
+    let false_positive_rate = false_positives as f64 / num_queries as f64;
+    let expected_fp_rate = (2 * index.num_slots()) as f64 / (65535 * index.num_partitions()) as f64;
+    let occupancy = index_size as f64 / index_capacity as f64;
     Ok(BenchmarkResult {
         num_queries,
         partitions: index.num_partitions(),
         partition_size,
-        num_buckets: index.num_buckes(),
+        num_buckets: index.num_buckets(),
         parallelism,
         qps: num_queries as u128 * 1000 / query_duration.as_millis(),
         ameanstats,
         medianstats: med,
         read_throughput: read_throughput(&query_duration, index.num_slots(), num_queries),
+        false_positive_rate,
+        expected_fp_rate,
+        occupancy,
     })
 }
 

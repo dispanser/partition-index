@@ -87,7 +87,7 @@ where
         Ok(())
     }
 
-    pub fn num_buckes(&self) -> u64 {
+    pub fn num_buckets(&self) -> u64 {
         self.data.num_buckets
     }
 
