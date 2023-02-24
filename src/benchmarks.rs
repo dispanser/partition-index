@@ -126,6 +126,7 @@ fn run_query(index: &PersistentIndex<BenchmarkPartition>, i: u64, max_elem: u64)
         false_positives: if i >= max_elem { 
             results
         } else {
+            assert!(results > 0);
             results - 1
         },
     })
@@ -187,7 +188,7 @@ pub fn run_benchmark(
     let ameanstats = durations.ameanstd()?;
     let med = durations.medstats(&mut noop)?;
     let index_capacity = index.num_slots() as u64 * index.num_buckets();
-    let false_positive_rate = false_positives as f64 / num_queries as f64;
+    let false_positive_rate = false_positives as f64 / (num_queries * index.num_partitions()) as f64;
     let expected_fp_rate = (2 * index.num_slots()) as f64 / (65535 * index.num_partitions()) as f64;
     let occupancy = index_size as f64 / index_capacity as f64;
     Ok(BenchmarkResult {
