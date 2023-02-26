@@ -47,6 +47,21 @@ pub trait PartitionIndex<P> {
     /// @param partition the partition identifier to associate the values with
     fn add(&mut self, values: impl Iterator<Item = u64>, partition: P);
 
+    /// Add a batch of multiple partitions to the index.
+    /// @param partitions the partitions, a tuple representing the partition identifier and values
+    ///
+    /// Default implementation sequentially calls `Self::add` one partition at a time.
+    fn add_many<I1>(&mut self, partitions: Vec<(P, I1)>) -> anyhow::Result<()>
+    where
+        I1: Iterator<Item = u64> + Send + Sync,
+        P: Send + Sync,
+    {
+        for (partition, values) in partitions {
+            self.add(values, partition);
+        }
+        Ok(())
+    }
+
     /// Remove a partition from the index.
     /// @param partition to remove
     fn remove(&mut self, partition: &P);

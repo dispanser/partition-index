@@ -24,8 +24,8 @@ fn run_single(
         let _ = fs::remove_dir_all(&index_root)?;
     }
     eprintln!(
-        "[query benchmark]: creating p = {}, e = {}, b = {}",
-        partitions, elements, buckets
+        "[query benchmark]: creating p = {}, e = {}, b = {} at {}",
+        partitions, elements, buckets, index_root
     );
     create_index(&index_root, partitions, elements, buckets)?;
     let index = PersistentIndex::<BenchmarkPartition>::try_load_from_disk(index_root.to_string())?;

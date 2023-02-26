@@ -142,6 +142,8 @@ where
         self.load_bucket(bucket2, &mut b2_data)?;
         let b1_data_u16 = to_u16_slice(&b1_data);
         let b2_data_u16 = to_u16_slice(&b2_data);
+        assert_eq!(b1_data_u16.len(), self.data.slots);
+        assert_eq!(b2_data_u16.len(), self.data.slots);
         let mut pos = 0;
         let mut result = vec![];
         for p in &self.data.partitions {
@@ -186,6 +188,14 @@ where
 {
     fn add(&mut self, values: impl Iterator<Item = u64>, partition: P) {
         self.mem_index.add(values, partition)
+    }
+
+    fn add_many<I1>(&mut self, partitions: Vec<(P, I1)>) -> anyhow::Result<()>
+    where
+        I1: Iterator<Item = u64> + Send + Sync,
+        P: Send + Sync,
+    {
+        self.mem_index.add_many(partitions)
     }
 
     fn remove(&mut self, to_be_removed: &P) {

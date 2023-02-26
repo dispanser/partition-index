@@ -1,6 +1,7 @@
 use crate::filter::cuckoo::{bucket, fingerprint, flip_bucket, growable};
 use crate::filter::Filter;
 use crate::index::{PartitionFilter, PartitionIndex};
+use rayon::prelude::*;
 
 #[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PartitionInfo<P> {
@@ -23,6 +24,17 @@ impl<P> CuckooIndex<P> {
             buckets: vec![vec![]; buckets as usize],
             slots: 0,
         }
+    }
+
+    fn index_single_partition(
+        &self,
+        values: impl Iterator<Item = u64>,
+    ) -> growable::GrowableCuckooFilter {
+        let mut f = growable::GrowableCuckooFilter::new(self.buckets.len() as u64);
+        for v in values.into_iter() {
+            f.insert(v);
+        }
+        f
     }
 }
 
@@ -57,10 +69,7 @@ where
     P: PartialEq,
 {
     fn add(&mut self, values: impl Iterator<Item = u64>, partition: P) {
-        let mut f = growable::GrowableCuckooFilter::new(self.buckets.len() as u64);
-        for v in values.into_iter() {
-            f.insert(v);
-        }
+        let f = self.index_single_partition(values);
         self.partitions.push(PartitionInfo {
             partition,
             entries: f.entries_per_bucket(),
@@ -74,6 +83,42 @@ where
                 bucket.resize(self.slots, 0);
             }
         }
+    }
+
+    fn add_many<I1>(&mut self, partitions: Vec<(P, I1)>) -> anyhow::Result<()>
+    where
+        I1: Iterator<Item = u64> + Send + Sync,
+        P: Send + Sync,
+    {
+        let filters: Vec<_> = partitions
+            .into_par_iter()
+            .map(|(partition, values)| (partition, self.index_single_partition(values)))
+            .collect();
+        let new_slots: usize = filters.iter().map(|f| f.1.entries_per_bucket()).sum();
+        self.buckets
+            .par_iter_mut()
+            .enumerate()
+            .for_each(|(idx, bucket)| {
+                bucket.reserve(new_slots);
+                for f in filters.iter() {
+                    f.1.data[idx].iter().for_each(|e| bucket.push(*e));
+                    for _ in f.1.data[idx].len() .. f.1.entries_per_bucket() {
+                        bucket.push(0); // place holder for unoccupied slots
+                    }
+                }
+            });
+        self.slots += new_slots;
+        let mut partition_infos: Vec<_> = filters
+            .into_iter()
+            .map(|(partition, f)| PartitionInfo {
+                partition,
+                entries: f.entries_per_bucket(),
+                active: true,
+            })
+            .collect();
+        eprintln!("tp;add_many: adding {}/{} slots", partition_infos.len(), new_slots);
+        self.partitions.append(&mut partition_infos);
+        Ok(())
     }
 
     fn remove(&mut self, to_be_removed: &P) {

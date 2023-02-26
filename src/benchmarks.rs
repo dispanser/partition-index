@@ -64,14 +64,14 @@ pub fn result_csv_line(benchmark_result: &BenchmarkResult) -> String {
     )
 }
 
-fn index_partition(
+fn index_partitions(
     index: &mut impl PartitionIndex<BenchmarkPartition>,
-    partition: BenchmarkPartition,
-) {
-    index.add(
-        partition.start..(partition.start + partition.length),
-        partition,
-    )
+    partitions: &[BenchmarkPartition],
+) -> anyhow::Result<()> {
+    let partitions: Vec<_> = partitions.into_iter().map(|bp| {
+        (bp.clone(), bp.start..(bp.start + bp.length))
+    }).collect();
+    index.add_many(partitions)
 }
 
 pub fn create_index(
@@ -94,8 +94,8 @@ pub fn create_index(
     }
 
     let mut index = PersistentIndex::try_new(buckets, index_root.to_string())?;
-    for p in partitions {
-        index_partition(&mut index, p);
+    for p in partitions.chunks(1024) {
+        index_partitions(&mut index, p)?;
         let size = index.estimate_mem_size();
         if size > (1 << 30) {
             let start = SystemTime::now();
