@@ -23,6 +23,7 @@ pub struct BenchmarkResult {
     pub partitions: usize,
     pub partition_size: u64,
     pub num_buckets: u64,
+    pub bucket_size: u64,
     pub parallelism: usize,
     pub qps: u128,
     pub ameanstats: MStats,
@@ -34,9 +35,9 @@ pub struct BenchmarkResult {
 }
 
 pub fn result_csv_header() -> String {
-    "queries,partitions,elements per partition,buckets,parallelism,\
+    "queries,partitions,elements per partition,buckets,bucket size,parallelism,\
     queries per second,mean latency (μs),std dev latency,\
-    median (μs),mad,standard error,\
+    median (μs),mad,\
     read throughput (MB/s),false positive rate,expected fp rate,occupancy"
         .to_string()
 }
@@ -46,11 +47,12 @@ pub fn result_csv_line(benchmark_result: &BenchmarkResult) -> String {
     // queries per second,mean latency (μs),std dev latency,
     // median (μs),mad,read throughput (MB/s)
     format!(
-        "{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+        "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
         benchmark_result.num_queries,
         benchmark_result.partitions,
         benchmark_result.partition_size,
         benchmark_result.num_buckets,
+        benchmark_result.bucket_size,
         benchmark_result.parallelism,
         benchmark_result.qps,
         benchmark_result.ameanstats.centre,
@@ -196,6 +198,7 @@ pub fn run_benchmark(
         partitions: index.num_partitions(),
         partition_size,
         num_buckets: index.num_buckets(),
+        bucket_size: index.num_slots() as u64,
         parallelism,
         qps: num_queries as u128 * 1000 / query_duration.as_millis(),
         ameanstats,
