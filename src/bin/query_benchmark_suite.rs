@@ -8,14 +8,21 @@ use partition_index::{
     index::poc::PersistentIndex,
 };
 
+struct BenchmarkConfig {
+    partitions: Vec<u64>,
+    elements: Vec<u64>,
+    buckets: Vec<u64>,
+    parallelism: Vec<usize>,
+}
+
 // this creates a dataset based on
 fn run_single(
     partitions: u64,
     elements: u64,
     buckets: u64,
+    parallelism: &Vec<usize>,
 ) -> anyhow::Result<Vec<BenchmarkResult>> {
-    let time_limit = Duration::from_secs(60);
-    let parallelism = [1, 2, 3, 4, 6, 8, 12, 16]; //, 24, 32, 48, 64];
+    let time_limit = Duration::from_millis(10);
     let index_root = format!(
         "/home/data/tmp/partition_index/query_benchmarks/scratch/p={}/e={}/b={}",
         partitions, elements, buckets
@@ -31,7 +38,7 @@ fn run_single(
     let index = PersistentIndex::<BenchmarkPartition>::try_load_from_disk(index_root.to_string())?;
     // using the same index to run queries with different levels of parallelism
     let results = parallelism
-        .iter()
+        .into_iter()
         .map(|p| run_benchmark(&index, time_limit, *p).expect("waddabadda"))
         .collect();
     let _ = fs::remove_dir_all(index_root)?;
@@ -39,16 +46,41 @@ fn run_single(
 }
 
 fn main() -> anyhow::Result<()> {
-    let partitions = [1000, 10000, 100000, 1000000];
-    let elements = [10000, 100000, 1000000];
-    let buckets = [2200, 22000, 220000];
+    let _bucket_conf = BenchmarkConfig {
+        partitions: vec![1000000],
+        elements: vec![100000],
+        buckets: vec![11, 12, 13, 16, 20, 24, 30, 40, 68]
+            .into_iter()
+            .map(|x| x * 1000)
+            .collect(),
+        // parallelism: vec![1, 2, 3, 4, 6, 8],
+        parallelism: vec![1],
+    };
+    let _performance_conf = BenchmarkConfig {
+        partitions: vec![800000],
+        elements: vec![100000],
+        buckets: vec![11, 12, 13, 16, 20, 24, 30, 40, 68]
+            .into_iter()
+            .map(|x| x * 1000)
+            .collect(),
+        parallelism: vec![1, 2, 3, 4, 6, 8],
+    };
+    let _occupancy_conf = BenchmarkConfig {
+        partitions: vec![1],
+        elements: vec![100000],
+        buckets: (1..1000).into_iter().map(|x| x * 100).collect(),
+        parallelism: vec![1],
+    };
+
+    let conf = _occupancy_conf;
 
     let mut benchmark_results = vec![];
-    for p in partitions {
-        for e in elements {
-            for b in buckets {
-                if p * e <= 100 * 1000 * 1000 * 1000 && e > b {
-                    let mut run_results = run_single(p, e, b)?;
+    for p in conf.partitions {
+        for e in conf.elements.iter() {
+            for b in conf.buckets.iter() {
+                // benchmark with more then 100 * 10^9 elements does not fit on our disk
+                if p * e <= 100 * 1000 * 1000 * 1000 && e > &b {
+                    let mut run_results = run_single(p, *e, *b, &conf.parallelism)?;
                     benchmark_results.append(&mut run_results);
                 }
             }

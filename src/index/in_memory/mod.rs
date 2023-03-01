@@ -116,7 +116,6 @@ where
                 active: true,
             })
             .collect();
-        eprintln!("tp;add_many: adding {}/{} slots", partition_infos.len(), new_slots);
         self.partitions.append(&mut partition_infos);
         Ok(())
     }
