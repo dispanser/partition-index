@@ -180,7 +180,7 @@ pub fn run_benchmark(
         .map(|vs| vs.false_positives)
         .sum();
     let num_queries: usize = durations.len();
-    println!(
+    eprintln!(
         "tp;bench query: queried {} elems in {:?} ({:?} ops) using {} threads",
         num_queries,
         query_duration,
