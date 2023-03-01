@@ -68,7 +68,7 @@ fn main() -> anyhow::Result<()> {
     let _occupancy_conf = BenchmarkConfig {
         partitions: vec![1],
         elements: vec![100000],
-        buckets: (1..1000).into_iter().map(|x| x * 100).collect(),
+        buckets: (1..1000).into_iter().map(|x| x * 500).collect(),
         parallelism: vec![1],
     };
 

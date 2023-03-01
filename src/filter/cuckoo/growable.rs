@@ -8,7 +8,7 @@ pub struct GrowableCuckooFilter {
     pub(crate) data: Vec<Vec<u16>>, // 16 bit fingerprints, 0 marks invalid entry
     buckets: u64,
     entries_per_bucket: usize,
-    items: u64, // number of fingerprints stored in the filter
+    elements: u64, // number of fingerprints stored in the filter
 }
 
 impl GrowableCuckooFilter {
@@ -17,7 +17,7 @@ impl GrowableCuckooFilter {
             data: vec![vec![]; buckets as usize],
             buckets,
             entries_per_bucket: 1,
-            items: 0,
+            elements: 0,
         }
     }
 
@@ -25,8 +25,8 @@ impl GrowableCuckooFilter {
         self.entries_per_bucket
     }
 
-    pub fn items(&self) -> u64 {
-        self.items
+    pub fn elements(&self) -> u64 {
+        self.elements
     }
 
     pub fn num_buckets(&self) -> u64 {
@@ -43,7 +43,7 @@ impl GrowableCuckooFilter {
 
         if entries.len() < self.entries_per_bucket {
             entries.push(fingerprint);
-            self.items += 1;
+            self.elements += 1;
             return InsertResult::Success;
         }
 
@@ -51,7 +51,7 @@ impl GrowableCuckooFilter {
         if tries_left == 0 {
             self.entries_per_bucket += 1;
             entries.push(fingerprint);
-            self.items += 1;
+            self.elements += 1;
             return InsertResult::Success;
         }
 
@@ -164,7 +164,7 @@ mod occupancy_tests {
                 break;
             }
         }
-        (pb.items - 1) as f64 / max_entries as f64
+        (pb.elements - 1) as f64 / max_entries as f64
     }
 
     // 2^16, 2^17, ... gives a lot of fingerprint clashes. I think that's because our

@@ -192,7 +192,7 @@ pub fn run_benchmark(
     let index_capacity = index.num_slots() as u64 * index.num_buckets();
     let false_positive_rate = false_positives as f64 / (num_queries * index.num_partitions()) as f64;
     let expected_fp_rate = (2 * index.num_slots()) as f64 / (65535 * index.num_partitions()) as f64;
-    let occupancy = index_size as f64 / index_capacity as f64;
+    let occupancy = index.elements() as f64 / index_capacity as f64;
     Ok(BenchmarkResult {
         num_queries,
         partitions: index.num_partitions(),

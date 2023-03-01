@@ -6,8 +6,9 @@ use rayon::prelude::*;
 #[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct PartitionInfo<P> {
     pub(crate) partition: P,
-    pub(crate) entries: usize,
+    pub(crate) bucket_size: usize,
     pub(crate) active: bool,
+    pub(crate) elements: u64,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -15,6 +16,7 @@ pub struct CuckooIndex<P> {
     pub(crate) partitions: Vec<PartitionInfo<P>>,
     pub(crate) buckets: Vec<Vec<u16>>,
     pub(crate) slots: usize,
+    pub(crate) elements: u64,
 }
 
 impl<P> CuckooIndex<P> {
@@ -23,6 +25,7 @@ impl<P> CuckooIndex<P> {
             partitions: vec![],
             buckets: vec![vec![]; buckets as usize],
             slots: 0,
+            elements: 0,
         }
     }
 
@@ -50,7 +53,7 @@ where
         let mut result = vec![];
         for p in &self.partitions {
             if p.active {
-                for l in 0..p.entries {
+                for l in 0..p.bucket_size {
                     if self.buckets[bucket1 as usize][pos + l] == fingerprint
                         || self.buckets[bucket2][pos + l] == fingerprint
                     {
@@ -58,7 +61,7 @@ where
                     }
                 }
             }
-            pos += p.entries;
+            pos += p.bucket_size;
         }
         Ok(result)
     }
@@ -72,10 +75,12 @@ where
         let f = self.index_single_partition(values);
         self.partitions.push(PartitionInfo {
             partition,
-            entries: f.entries_per_bucket(),
+            bucket_size: f.entries_per_bucket(),
             active: true,
+            elements: f.elements(),
         });
         self.slots += f.entries_per_bucket();
+        self.elements += f.elements();
         for (partition_values, bucket) in f.drain().iter_mut().zip(self.buckets.iter_mut()) {
             bucket.append(partition_values);
             if bucket.len() < self.slots {
@@ -110,10 +115,14 @@ where
         self.slots += new_slots;
         let mut partition_infos: Vec<_> = filters
             .into_iter()
-            .map(|(partition, f)| PartitionInfo {
-                partition,
-                entries: f.entries_per_bucket(),
-                active: true,
+            .map(|(partition, f)| {
+                self.elements += f.elements();
+                PartitionInfo {
+                    partition,
+                    bucket_size: f.entries_per_bucket(),
+                    active: true,
+                    elements: f.elements(),
+                }
             })
             .collect();
         self.partitions.append(&mut partition_infos);

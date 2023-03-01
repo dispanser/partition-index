@@ -16,6 +16,7 @@ pub struct PersistentIndexData<P> {
     num_buckets: u64,
     slots: usize,
     partitions: Vec<PartitionInfo<P>>,
+    elements: u64,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -38,6 +39,7 @@ where
                 num_buckets: buckets,
                 slots: 0,
                 partitions: vec![],
+                elements: 0,
             },
             mem_index: CuckooIndex::new(buckets),
             data_root,
@@ -76,6 +78,7 @@ where
         }
         self.data.partitions.append(&mut self.mem_index.partitions);
         self.data.slots += self.mem_index.slots;
+        self.data.elements += self.mem_index.elements;
         let file = fs::OpenOptions::new()
             .read(false)
             .write(true)
@@ -93,6 +96,10 @@ where
 
     pub fn num_slots(&self) -> usize {
         self.data.slots
+    }
+
+    pub fn elements(&self) -> u64 {
+        self.data.elements + self.mem_index.elements
     }
 
     pub fn estimate_mem_size(&self) -> usize {
@@ -148,13 +155,13 @@ where
         let mut result = vec![];
         for p in &self.data.partitions {
             if p.active {
-                for l in 0..p.entries {
+                for l in 0..p.bucket_size {
                     if b1_data_u16[pos + l] == fingerprint || b2_data_u16[pos + l] == fingerprint {
                         result.push(p.partition.clone());
                     }
                 }
             }
-            pos += p.entries;
+            pos += p.bucket_size;
         }
         Ok(result)
     }
