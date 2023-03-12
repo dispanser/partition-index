@@ -213,5 +213,6 @@ pub fn run_benchmark(
 /// compute the MB/s read performance
 pub fn read_throughput(d: &Duration, num_slots: usize, num_queries: usize) -> f64 {
     // read b buckets times two bytes times two buckets times num queries
+    // 1000 -> because we do millis
     ((num_slots * num_queries * 2 * 2 * 1000) / (1 << 20)) as f64 / d.as_millis() as f64
 }
