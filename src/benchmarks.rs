@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime};
 
-use rstats::{noop, MStats, Median, Stats};
+use rstats::{MStats, Medianf64, Stats};
 
 use crate::index::{poc::PersistentIndex, PartitionFilter, PartitionIndex};
 
@@ -188,7 +188,7 @@ pub fn run_benchmark(
         parallelism,
     );
     let ameanstats = durations.ameanstd()?;
-    let med = durations.medstats(&mut noop)?;
+    let med = durations.medstats()?;
     let index_capacity = index.num_slots() as u64 * index.num_buckets();
     let false_positive_rate = false_positives as f64 / (num_queries * index.num_partitions()) as f64;
     let expected_fp_rate = (2 * index.num_slots()) as f64 / (65535 * index.num_partitions()) as f64;
